@@ -124,6 +124,9 @@ class AppDB(context: Context) {
     fun deleteMessages(chatId: Long) =
         runBlocking(Dispatchers.IO) { db.chatMessagesDao().deleteMessages(chatId) }
 
+    fun deleteMessagesFrom(chatId: Long, messageId: Long) =
+        runBlocking(Dispatchers.IO) { db.chatMessagesDao().deleteMessagesFrom(chatId, messageId) }
+
     // Models
 
     fun addModel(name: String, url: String, path: String, contextSize: Int, chatTemplate: String) =

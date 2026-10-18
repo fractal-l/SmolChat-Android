@@ -29,6 +29,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.Clipboard
 import compose.icons.feathericons.Code
 import compose.icons.feathericons.Edit2
+import compose.icons.feathericons.RotateCcw
 import compose.icons.feathericons.Share
 import io.shubham0204.smollmandroid.R
 
@@ -36,9 +37,11 @@ private lateinit var onDialogCopyClick: (() -> Unit)
 private lateinit var onDialogCodeSnippetCopyClick: () -> Unit
 private lateinit var onDialogShareClick: (() -> Unit)
 private lateinit var onDialogEditClick: (() -> Unit)
+private lateinit var onDialogRollbackClick: (() -> Unit)
 private val dialogVisibleStatus = mutableStateOf(false)
 private var dialogShowChatMessageEditOption = false
 private var dialogShowCopyCodeSnippetOption = false
+private var dialogShowRollbackOption = false
 
 @Composable
 fun ChatMessageOptionsDialog() {
@@ -95,6 +98,17 @@ fun ChatMessageOptionsDialog() {
                             },
                         )
                     }
+                    if (dialogShowRollbackOption) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        ChatMessageOption(
+                            titleStringResId = R.string.chat_message_rollback,
+                            icon = FeatherIcons.RotateCcw,
+                            onClick = {
+                                visible = false
+                                onDialogRollbackClick()
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -126,12 +140,16 @@ fun createChatMessageOptionsDialog(
     showCopyCodeSnippetOption: Boolean,
     onEditClick: (() -> Unit) = {},
     onCodeSnippetCopyClick: () -> Unit = {},
+    showRollbackOption: Boolean = false,
+    onRollbackClick: (() -> Unit) = {},
 ) {
     onDialogCopyClick = onCopyClick
     onDialogCodeSnippetCopyClick = onCodeSnippetCopyClick
     onDialogShareClick = onShareClick
     onDialogEditClick = onEditClick
+    onDialogRollbackClick = onRollbackClick
     dialogShowChatMessageEditOption = showEditOption
     dialogShowCopyCodeSnippetOption = showCopyCodeSnippetOption
+    dialogShowRollbackOption = showRollbackOption
     dialogVisibleStatus.value = true
 }

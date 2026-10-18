@@ -117,4 +117,7 @@
     <string name="title_activity_app_settings">AppSettingsActivity</string>
     <string name="chat_options_show_ram">Show RAM usage</string>
     <string name="chat_options_hide_ram">Hide RAM usage</string>
+    <string name="chat_message_rollback">Rollback to here</string>
+    <string name="dialog_rollback_title">Rollback Conversation</string>
+    <string name="dialog_rollback_text">This will delete this message and all messages after it, and reset the model\'s memory. Are you sure?</string>
 </resources>

@@ -87,6 +87,9 @@ fun ColumnScope.MessagesList(
                         onMessageEdited = {
                             // Not applicable as allowEditing is set to False
                         },
+                        onMessageRollback = {
+                            // Not applicable for the partial response
+                        },
                         allowEditing = false,
                         onCodeSnippetCopyClicked = {
                             // Not applicable as partial messages (may) not have code snippets
@@ -163,8 +166,15 @@ fun ColumnScope.MessagesList(
                         ChatScreenUIEvent.ChatEvents.OnMessageEdited(
                             chatId,
                             chatMessage,
-                            messages.last(),
                             newMessage,
+                        )
+                    )
+                },
+                onMessageRollback = {
+                    onEvent(
+                        ChatScreenUIEvent.ChatEvents.OnMessageRollback(
+                            chatId,
+                            chatMessage,
                         )
                     )
                 },

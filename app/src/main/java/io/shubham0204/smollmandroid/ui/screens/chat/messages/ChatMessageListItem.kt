@@ -59,18 +59,18 @@ fun LazyItemScope.MessageListItem(
     onShareClicked: () -> Unit,
     onCodeSnippetCopyClicked: (List<String>) -> Unit,
     onMessageEdited: (String) -> Unit,
+    onMessageRollback: () -> Unit,
     modifier: Modifier = Modifier,
     allowEditing: Boolean,
 ) {
-    var isEditing by rememberSaveable { mutableStateOf(false) }
     if (isUserMessage) {
         UserMessageListItem(
             message,
-            isEditing,
             allowEditing,
             onCopyClicked,
             onShareClicked,
-            onMessageEdited
+            onMessageEdited,
+            onMessageRollback,
         )
     } else {
         LLMMessageListItem(
@@ -79,6 +79,7 @@ fun LazyItemScope.MessageListItem(
             onCopyClicked,
             onShareClicked,
             onCodeSnippetCopyClicked,
+            onMessageRollback,
             responseGenerationSpeed,
             responseGenerationTimeSecs
         )
@@ -88,25 +89,24 @@ fun LazyItemScope.MessageListItem(
 @Composable
 private fun LazyItemScope.UserMessageListItem(
     message: ChatMessage,
-    isEditing: Boolean,
     allowEditing: Boolean,
     onCopyClicked: () -> Unit,
     onShareClicked: () -> Unit,
-    onMessageEdited: (String) -> Unit
+    onMessageEdited: (String) -> Unit,
+    onMessageRollback: () -> Unit,
 ) {
-    val message1 = message
-    var isEditing1 = isEditing
+    var isEditing by rememberSaveable(message.id) { mutableStateOf(false) }
+    var editedText by rememberSaveable(message.id) { mutableStateOf(message.message) }
     Row(
         modifier = Modifier
             .fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
     ) {
         Column(horizontalAlignment = Alignment.End) {
-            var message by rememberSaveable { mutableStateOf(message1.toString()) }
-            if (isEditing1) {
+            if (isEditing) {
                 TextField(
-                    value = message,
-                    onValueChange = { message = it },
+                    value = editedText,
+                    onValueChange = { editedText = it },
                     modifier =
                         Modifier
                             .padding(8.dp)
@@ -137,13 +137,18 @@ private fun LazyItemScope.UserMessageListItem(
                             .widthIn(max = 250.dp),
                     textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
                     textSize = 16f,
-                    message = message1.renderedMessage,
+                    message = message.renderedMessage,
                     onLongClick = {
                         createChatMessageOptionsDialog(
                             showEditOption = allowEditing,
-                            onEditClick = { isEditing1 = true },
+                            onEditClick = {
+                                editedText = message.message
+                                isEditing = true
+                            },
                             onCopyClick = { onCopyClicked() },
                             onShareClick = { onShareClicked() },
+                            onRollbackClick = { onMessageRollback() },
+                            showRollbackOption = true,
                             showCopyCodeSnippetOption = false
                         )
                     },
@@ -153,25 +158,25 @@ private fun LazyItemScope.UserMessageListItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (allowEditing) {
                     Spacer(modifier = Modifier.width(8.dp))
-                    if (isEditing1) {
+                    if (isEditing) {
                         Text(
                             text = stringResource(R.string.edit_chat_message_done),
                             modifier =
                                 Modifier.clickable {
-                                    isEditing1 = false
-                                    onMessageEdited(message)
+                                    isEditing = false
+                                    onMessageEdited(editedText)
                                 },
-                            fontSize = 6.sp,
+                            style = MaterialTheme.typography.labelMedium,
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.dialog_neg_cancel),
                             modifier =
                                 Modifier.clickable {
-                                    isEditing1 = false
-                                    message = message.toString()
+                                    editedText = message.message
+                                    isEditing = false
                                 },
-                            fontSize = 6.sp,
+                            style = MaterialTheme.typography.labelMedium,
                         )
                     }
                 }
@@ -188,6 +193,7 @@ private fun LazyItemScope.LLMMessageListItem(
     onCopyClicked: () -> Unit,
     onShareClicked: () -> Unit,
     onCodeSnippetCopyClicked: (List<String>) -> Unit,
+    onMessageRollback: () -> Unit,
     responseGenerationSpeed: Float?,
     responseGenerationTimeSecs: Int?
 ) {
@@ -218,6 +224,8 @@ private fun LazyItemScope.LLMMessageListItem(
                         },
                         onCopyClick = { onCopyClicked() },
                         onShareClick = { onShareClicked() },
+                        onRollbackClick = { onMessageRollback() },
+                        showRollbackOption = true,
                         onCodeSnippetCopyClick = {
                             onCodeSnippetCopyClicked(messageProperties.codeSnippets)
                         },

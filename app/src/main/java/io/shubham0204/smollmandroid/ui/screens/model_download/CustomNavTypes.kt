@@ -16,7 +16,7 @@ object CustomNavTypes {
             }
 
             override fun parseValue(value: String): HFModelInfo.ModelInfo =
-                Json.decodeFromString(Uri.decode(value))
+                Json.decodeFromString(value)
 
             override fun serializeAsValue(value: HFModelInfo.ModelInfo): String =
                 Uri.encode(Json.encodeToString(value))
@@ -33,7 +33,7 @@ object CustomNavTypes {
             }
 
             override fun parseValue(value: String): List<HFModelTree.HFModelFile> =
-                Json.decodeFromString(Uri.decode(value))
+                Json.decodeFromString(value)
 
             override fun serializeAsValue(value: List<HFModelTree.HFModelFile>): String =
                 Uri.encode(Json.encodeToString(value))

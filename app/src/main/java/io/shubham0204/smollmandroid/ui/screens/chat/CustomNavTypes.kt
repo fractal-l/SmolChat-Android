@@ -12,8 +12,7 @@ object CustomNavTypes {
                 return Json.decodeFromString(bundle.getString(key) ?: return null)
             }
 
-            override fun parseValue(value: String): Chat =
-                Json.decodeFromString(Uri.decode(value))
+            override fun parseValue(value: String): Chat = Json.decodeFromString(value)
 
             override fun serializeAsValue(value: Chat): String =
                 Uri.encode(Json.encodeToString(value))

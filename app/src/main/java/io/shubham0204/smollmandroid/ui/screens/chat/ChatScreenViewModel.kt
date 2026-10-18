@@ -84,9 +84,11 @@ sealed class ChatScreenUIEvent {
         data class OnMessageEdited(
             val chatId: Long,
             val oldMessage: ChatMessage,
-            val lastMessage: ChatMessage,
             val newMessageText: String,
         ) : ChatScreenUIEvent()
+
+        data class OnMessageRollback(val chatId: Long, val message: ChatMessage) :
+            ChatScreenUIEvent()
 
         data class OnDeleteChat(val chat: Chat) : ChatScreenUIEvent()
 
@@ -401,27 +403,25 @@ class ChatScreenViewModel(
             }
 
             is ChatScreenUIEvent.ChatEvents.OnMessageEdited -> {
-                // viewModel.sendUserQuery will add a new message to the chat
-                // hence we delete the old message and the corresponding LLM
-                // response if there exists one
-                // TODO: There should be no need to unload/load the model again
-                //       as only the conversation messages have changed.
-                //       Currently there's no native function to edit the conversation
-                // messages
-                //       so unload (remove all messages) and load (add all messages) the
-                // model.
-                deleteMessage(event.oldMessage.id)
-                if (!event.lastMessage.isUserMessage) {
-                    deleteMessage(event.lastMessage.id)
+                // Remove the edited message (and anything after it) from the chat,
+                // reload the model so its context matches the updated conversation,
+                // then send the new text as a fresh query. The query is added to the
+                // database exactly once by `sendUserQuery`.
+                rollbackMessagesFrom(event.chatId, event.oldMessage.id) {
+                    sendUserQuery(event.newMessageText)
                 }
-                appDB.addUserMessage(event.chatId, event.newMessageText)
-                unloadModel()
-                loadModel(
-                    onComplete = {
-                        if (it == ModelLoadingState.SUCCESS) {
-                            sendUserQuery(event.newMessageText, addMessageToDB = false)
-                        }
-                    }
+            }
+
+            is ChatScreenUIEvent.ChatEvents.OnMessageRollback -> {
+                createAlertDialog(
+                    dialogTitle = context.getString(R.string.dialog_rollback_title),
+                    dialogText = context.getString(R.string.dialog_rollback_text),
+                    dialogPositiveButtonText = context.getString(R.string.chat_message_rollback),
+                    dialogNegativeButtonText = context.getString(R.string.dialog_neg_cancel),
+                    onPositiveButtonClick = {
+                        rollbackMessagesFrom(event.chatId, event.message.id)
+                    },
+                    onNegativeButtonClick = {},
                 )
             }
 
@@ -684,9 +684,32 @@ class ChatScreenViewModel(
         appDB.updateChat(newChat)
     }
 
-    private fun deleteMessage(messageId: Long) {
-        renderedMessageCache.remove(messageId)
-        appDB.deleteMessage(messageId)
+    /**
+     * Deletes the message with the given id and every message after it in the chat, then reloads
+     * the model so its context reflects the updated conversation. When the model is reloaded
+     * successfully, [onReloadComplete] is invoked (e.g. to resend an edited message).
+     *
+     * Note: there is no native API to edit/remove individual conversation messages, so the model
+     * must be unloaded and loaded again for the changes to take effect.
+     */
+    private fun rollbackMessagesFrom(
+        chatId: Long,
+        messageId: Long,
+        onReloadComplete: () -> Unit = {},
+    ) {
+        stopGeneration()
+        _uiState.value.messages
+            .filter { it.chatId == chatId && it.id >= messageId }
+            .forEach { renderedMessageCache.remove(it.id) }
+        appDB.deleteMessagesFrom(chatId, messageId)
+        unloadModel()
+        loadModel(
+            onComplete = {
+                if (it == ModelLoadingState.SUCCESS) {
+                    onReloadComplete()
+                }
+            }
+        )
     }
 
     private fun sendUserQuery(query: String, addMessageToDB: Boolean = true) {
