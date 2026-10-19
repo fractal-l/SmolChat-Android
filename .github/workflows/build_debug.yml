@@ -30,11 +30,18 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
+      - name: Setup ccache
+        uses: ./.github/actions/setup-ccache
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --build-cache
+
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
       - name: Upload APK to artifacts
         uses: actions/upload-artifact@v4

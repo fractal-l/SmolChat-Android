@@ -30,6 +30,9 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
+      - name: Setup ccache
+        uses: ./.github/actions/setup-ccache
+
       - name: Decode keystore
         env:
           ENCODED_STRING: ${{ secrets.KEYSTORE_BASE_64 }}
@@ -46,7 +49,11 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace --build-cache
+
+      - name: Show ccache stats
+        if: always()
+        run: ccache --show-stats
 
       - name: Verify APK signature
         run: |

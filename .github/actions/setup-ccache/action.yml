@@ -1,0 +1,32 @@
+name: Setup ccache
+description: Restore and configure ccache for the native llama.cpp build
+
+runs:
+  using: composite
+  steps:
+    - name: Restore ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ runner.os }}-ndk-r27c-${{ github.run_id }}
+        restore-keys: |
+          ccache-${{ runner.os }}-ndk-r27c-
+
+    - name: Configure ccache
+      shell: bash
+      run: |
+        if ! command -v ccache >/dev/null 2>&1; then
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ccache
+        fi
+        ccache --version
+        ccache --max-size=2G
+        ccache --zero-stats
+        {
+          echo "CCACHE_DIR=$HOME/.cache/ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_NOHASHDIR=true"
+          echo "CCACHE_COMPILERCHECK=content"
+          echo "CCACHE_SLOPPINESS=time_macros"
+          echo "CMAKE_COMPILER_LAUNCHER=ccache"
+        } >> "$GITHUB_ENV"

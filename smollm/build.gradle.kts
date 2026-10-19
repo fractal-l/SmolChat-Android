@@ -42,6 +42,12 @@ android {
                 arguments += "-DLLAMA_BUILD_COMMON=ON"
                 arguments += "-DLLAMA_CURL=OFF"
                 arguments += "-DGGML_LLAMAFILE=OFF"
+
+                // Use ccache when CI provides it. Local builds are unaffected.
+                System.getenv("CMAKE_COMPILER_LAUNCHER")?.takeIf { it.isNotBlank() }?.let {
+                    arguments += "-DCMAKE_C_COMPILER_LAUNCHER=$it"
+                    arguments += "-DCMAKE_CXX_COMPILER_LAUNCHER=$it"
+                }
                 // (debugging) uncomment the following line to enable debug builds
                 // and attach hardware-assisted address sanitizer
                 // arguments += "-DCMAKE_BUILD_TYPE=Debug"
