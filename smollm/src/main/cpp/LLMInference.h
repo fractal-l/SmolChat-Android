@@ -11,7 +11,7 @@ class LLMInference {
     llama_model*   _model;
     llama_sampler* _sampler;
     llama_token    _currToken;
-    llama_batch*   _batch;
+    llama_batch    _batch{};
 
     llama_batch g_batch;
 
@@ -24,6 +24,22 @@ class LLMInference {
     // appended to `_messages`
     std::vector<llama_token> _promptTokens;
     const char*              _chatTemplate;
+
+    // Full rendered prompt for the current turn (with the generation prompt).
+    std::string _promptText;
+    // Text already fed to the KV cache in this session. This is the rendered
+    // prompt followed by the tokens generated for it. On the next turn only
+    // the newly appended text is tokenized and decoded.
+    std::string _processedText;
+    size_t      _processedLen = 0;
+    // True only after a turn completed cleanly. A cancelled or failed turn
+    // leaves it false so the next turn rebuilds the context from scratch.
+    bool        _cacheValid = false;
+
+    struct RenderedPrompt {
+        std::string text;
+        bool        usedJinja = true;
+    };
 
     // stores the complete response for the given query
     std::string _response;
@@ -39,6 +55,10 @@ class LLMInference {
     int _nCtxUsed = 0;
 
     bool _isValidUtf8(const char* response);
+
+    RenderedPrompt _renderPrompt(bool addGenerationPrompt);
+
+    void _resetContext();
 
   public:
     void loadModel(const char* modelPath, float minP, float temperature, bool storeChats, long contextSize,

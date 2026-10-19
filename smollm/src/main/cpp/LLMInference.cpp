@@ -3,6 +3,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <utility>
 
 #define TAG "[SmolLMAndroid-Cpp]"
 #define LOGi(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -57,6 +58,13 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
 
     _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
     _messages.clear();
+    _promptText.clear();
+    _processedText.clear();
+    _processedLen = 0;
+    _cacheValid = false;
+    _response.clear();
+    _cacheResponseTokens.clear();
+    _batch = llama_batch{};
 
     if (chatTemplate == nullptr) {
         _chatTemplate = llama_model_chat_template(_model, nullptr);
@@ -71,6 +79,47 @@ LLMInference::addChatMessage(const char *message, const char *role) {
     _messages.push_back({strdup(role), strdup(message)});
 }
 
+LLMInference::RenderedPrompt
+LLMInference::_renderPrompt(bool addGenerationPrompt) {
+    std::vector<common_chat_msg> messages;
+    messages.reserve(_messages.size());
+    for (const llama_chat_message& message : _messages) {
+        common_chat_msg msg;
+        msg.role    = message.role;
+        msg.content = message.content;
+        messages.push_back(msg);
+    }
+    auto templates = common_chat_templates_init(_model, _chatTemplate ? _chatTemplate : "");
+
+    common_chat_templates_inputs inputs;
+    inputs.messages              = messages;
+    inputs.add_generation_prompt = addGenerationPrompt;
+    inputs.use_jinja             = true;
+    inputs.chat_template_kwargs["tools"] = "[]";
+
+    RenderedPrompt rendered;
+    try {
+        rendered.text = common_chat_templates_apply(templates.get(), inputs).prompt;
+    } catch (const std::exception &e) {
+        LOGe("Jinja template failed: %s — retrying with legacy renderer", e.what());
+        inputs.use_jinja = false;
+        inputs.chat_template_kwargs.clear();
+        rendered.text    = common_chat_templates_apply(templates.get(), inputs).prompt;
+        rendered.usedJinja = false;
+    }
+    return rendered;
+}
+
+void
+LLMInference::_resetContext() {
+    llama_memory_clear(llama_get_memory(_ctx), true);
+    _processedText.clear();
+    _processedLen = 0;
+    _cacheValid = false;
+    _response.clear();
+    _cacheResponseTokens.clear();
+}
+
 float
 LLMInference::getResponseGenerationTime() const {
     return (float) _responseNumTokens / (_responseGenerationTime / 1e6);
@@ -83,55 +132,56 @@ LLMInference::getContextSizeUsed() const {
 
 bool
 LLMInference::startCompletion(const char *query) {
-    llama_memory_clear(llama_get_memory(_ctx), false);
-    llama_sampler_reset(_sampler);
-    _cacheResponseTokens.clear();
-
     if (!_storeChats) {
-        _formattedMessages.clear();
-        _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
+        _resetContext();
     }
+    llama_sampler_reset(_sampler);
     _responseGenerationTime = 0;
     _responseNumTokens = 0;
+    _response.clear();
+    _cacheResponseTokens.clear();
+
     addChatMessage(query, "user");
-    // apply the chat-template
-    std::vector<common_chat_msg> messages;
-    for (const llama_chat_message& message : _messages) {
-        common_chat_msg msg;
-        msg.role    = message.role;
-        msg.content = message.content;
-        messages.push_back(msg);
+
+    RenderedPrompt rendered = _renderPrompt(true);
+    _promptText = std::move(rendered.text);
+
+    // The KV cache from the previous turn already contains everything up to
+    // `_processedText`. If the newly rendered prompt still starts with that
+    // text, only the appended part (template glue + new message + generation
+    // prompt) needs to be tokenized and decoded.
+    const bool reuseCache =
+        _storeChats &&
+        _cacheValid &&
+        _processedLen > 0 &&
+        _promptText.size() >= _processedLen &&
+        _promptText.compare(0, _processedLen, _processedText) == 0;
+
+    if (!reuseCache) {
+        _resetContext();
     }
-    auto templates = common_chat_templates_init(_model, _chatTemplate ? _chatTemplate : "");
+    // The cache is only reusable again once this turn completes cleanly.
+    _cacheValid = false;
 
-    common_chat_templates_inputs inputs;
-    inputs.messages = messages;
-
-    // Try Jinja rendering first with tools defined to prevent "tojson on Undefined" errors.
-    // If Jinja fails (e.g. unsupported filters like lstrip), fall back to legacy rendering.
-    inputs.use_jinja = true;
-    inputs.chat_template_kwargs["tools"] = "[]";
-
-    std::string prompt;
-    bool usedJinja = true;
-    try {
-        prompt = common_chat_templates_apply(templates.get(), inputs).prompt;
-    } catch (const std::exception &e) {
-        LOGe("Jinja template failed: %s — retrying with legacy renderer", e.what());
-        inputs.use_jinja = false;
-        inputs.chat_template_kwargs.clear();
-        prompt = common_chat_templates_apply(templates.get(), inputs).prompt;
-        usedJinja = false;
-    }
-    _promptTokens = common_tokenize(llama_model_get_vocab(_model), prompt, true, true);
+    const size_t start = reuseCache ? _processedLen : 0;
+    const std::string delta = _promptText.substr(start);
+    _promptTokens = common_tokenize(
+        llama_model_get_vocab(_model),
+        delta,
+        /*add_special=*/start == 0,
+        /*parse_special=*/true
+    );
 
     // create a llama_batch containing a single sequence
     // see llama_batch_init for more details
-    _batch = new llama_batch();
-    _batch->token = _promptTokens.data();
-    _batch->n_tokens = _promptTokens.size();
+    _batch = llama_batch{};
+    _batch.token = _promptTokens.data();
+    _batch.n_tokens = _promptTokens.size();
 
-    return usedJinja;
+    LOGi("startCompletion: %zu new tokens, %zu prompt chars, cache reused = %d",
+         _promptTokens.size(), _promptText.size(), reuseCache ? 1 : 0);
+
+    return rendered.usedJinja;
 }
 
 // taken from:
@@ -177,13 +227,13 @@ LLMInference::completionLoop() {
     // have exceeded the context size of the model
     uint32_t contextSize = llama_n_ctx(_ctx);
     _nCtxUsed = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
-    if (_nCtxUsed + _batch->n_tokens > contextSize) {
+    if (_nCtxUsed + _batch.n_tokens > contextSize) {
         throw std::runtime_error("context size reached");
     }
 
     auto start = ggml_time_us();
     // run the model
-    if (llama_decode(_ctx, *_batch) < 0) {
+    if (llama_decode(_ctx, _batch) < 0) {
         throw std::runtime_error("llama_decode() failed");
     }
 
@@ -191,7 +241,16 @@ LLMInference::completionLoop() {
     // convert the integer token to its corresponding word-piece
     _currToken = llama_sampler_sample(_sampler, _ctx, -1);
     if (llama_vocab_is_eog(llama_model_get_vocab(_model), _currToken)) {
-        addChatMessage(strdup(_response.data()), "assistant");
+        addChatMessage(_response.c_str(), "assistant");
+        // If a multi-byte character was cut off by the EOG token, the KV cache
+        // holds bytes that are not part of the rendered text, so don't reuse it.
+        if (_storeChats && _cacheResponseTokens.empty()) {
+            // The KV cache now holds the prompt and the generated tokens,
+            // which is exactly the text rendered for the next turn's prefix.
+            _processedText = _promptText + _response;
+            _processedLen  = _processedText.size();
+            _cacheValid    = true;
+        }
         _response.clear();
         return "[EOG]";
     }
@@ -204,8 +263,8 @@ LLMInference::completionLoop() {
     // re-init the batch with the newly predicted token
     // key, value pairs of all previous tokens have been cached
     // in the KV cache
-    _batch->token = &_currToken;
-    _batch->n_tokens = 1;
+    _batch.token = &_currToken;
+    _batch.n_tokens = 1;
 
     if (_isValidUtf8(_cacheResponseTokens.c_str())) {
         _response += _cacheResponseTokens;
@@ -221,6 +280,11 @@ void
 LLMInference::stopCompletion() {
     if (_storeChats && !_response.empty()) {
         addChatMessage(_response.c_str(), "assistant");
+        if (_cacheResponseTokens.empty()) {
+            _processedText = _promptText + _response;
+            _processedLen  = _processedText.size();
+            _cacheValid    = true;
+        }
     }
     _response.clear();
 }
@@ -234,7 +298,6 @@ LLMInference::~LLMInference() {
     }
     llama_free(_ctx);
     llama_model_free(_model);
-    delete _batch;
     llama_sampler_free(_sampler);
 }
 
@@ -262,7 +325,7 @@ LLMInference::benchModel(int pp, int tg, int pl, int nr) {
         }
 
         g_batch.logits[g_batch.n_tokens - 1] = true;
-        llama_memory_clear(llama_get_memory(this->_ctx), false);
+        _resetContext();
 
         const auto t_pp_start = ggml_time_us();
         if (llama_decode(this->_ctx, g_batch) != 0) {
@@ -274,7 +337,7 @@ LLMInference::benchModel(int pp, int tg, int pl, int nr) {
 
         LOGi("Benchmark text generation (tg = %d)", tg);
 
-        llama_memory_clear(llama_get_memory(this->_ctx), false);
+        _resetContext();
         const auto t_tg_start = ggml_time_us();
         for (i = 0; i < tg; i++) {
             common_batch_clear(g_batch);
@@ -288,7 +351,7 @@ LLMInference::benchModel(int pp, int tg, int pl, int nr) {
         }
         const auto t_tg_end = ggml_time_us();
 
-        llama_memory_clear(llama_get_memory(this->_ctx), false);
+        _resetContext();
 
         const auto t_pp = double(t_pp_end - t_pp_start) / 1000000.0;
         const auto t_tg = double(t_tg_end - t_tg_start) / 1000000.0;
