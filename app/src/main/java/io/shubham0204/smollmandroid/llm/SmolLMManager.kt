@@ -78,13 +78,26 @@ class SmolLMManager(private val appDB: AppDB) {
         onSuccess: () -> Unit,
     ) {
         stateLock.withLock {
-            // Cancel any existing load operation
-            modelInitJob?.cancel()
+            // Cancel any in-flight generation/load before replacing the native model
+            val previousLoadJob = modelInitJob
+            val previousResponseJob = responseGenerationJob
+            previousLoadJob?.cancel()
+            previousResponseJob?.cancel()
+            isInstanceLoaded.set(false)
 
             try {
                 this.chat = chat
                 modelInitJob = CoroutineScope(Dispatchers.Default).launch {
                     try {
+                        // Wait for the cancelled jobs so the native instance is
+                        // no longer in use when it is closed below.
+                        previousResponseJob?.join()
+                        previousLoadJob?.join()
+                        // Release the previous model. Without this the native
+                        // pointer is overwritten on every chat/model switch and
+                        // the old model's memory is leaked.
+                        instance.close()
+                        isInstanceLoaded.set(false)
                         instance.load(modelPath, params)
                         LOGD("Model loaded")
 
@@ -159,11 +172,14 @@ class SmolLMManager(private val appDB: AppDB) {
                 return
             }
 
-            // Cancel any existing response generation
-            responseGenerationJob?.cancel()
+            // Cancel any existing response generation and wait for it to stop
+            // before touching the native instance again.
+            val previousResponseJob = responseGenerationJob
+            previousResponseJob?.cancel()
 
             responseGenerationJob = CoroutineScope(Dispatchers.Default).launch {
                 try {
+                    previousResponseJob?.join()
                     isInferenceOn = true
                     val responseBuilder = StringBuilder()
                     var lastDispatchedResponse = ""
