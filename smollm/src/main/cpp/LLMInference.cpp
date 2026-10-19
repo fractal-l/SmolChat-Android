@@ -1,4 +1,5 @@
 #include "LLMInference.h"
+#include <algorithm>
 #include <android/log.h>
 #include <cstring>
 #include <iomanip>
@@ -58,9 +59,7 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
 
     _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
     _messages.clear();
-    _promptText.clear();
-    _processedText.clear();
-    _processedLen = 0;
+    _kvTokens.clear();
     _cacheValid = false;
     _response.clear();
     _cacheResponseTokens.clear();
@@ -113,8 +112,7 @@ LLMInference::_renderPrompt(bool addGenerationPrompt) {
 void
 LLMInference::_resetContext() {
     llama_memory_clear(llama_get_memory(_ctx), true);
-    _processedText.clear();
-    _processedLen = 0;
+    _kvTokens.clear();
     _cacheValid = false;
     _response.clear();
     _cacheResponseTokens.clear();
@@ -132,9 +130,6 @@ LLMInference::getContextSizeUsed() const {
 
 bool
 LLMInference::startCompletion(const char *query) {
-    if (!_storeChats) {
-        _resetContext();
-    }
     llama_sampler_reset(_sampler);
     _responseGenerationTime = 0;
     _responseNumTokens = 0;
@@ -144,33 +139,51 @@ LLMInference::startCompletion(const char *query) {
     addChatMessage(query, "user");
 
     RenderedPrompt rendered = _renderPrompt(true);
-    _promptText = std::move(rendered.text);
 
-    // The KV cache from the previous turn already contains everything up to
-    // `_processedText`. If the newly rendered prompt still starts with that
-    // text, only the appended part (template glue + new message + generation
-    // prompt) needs to be tokenized and decoded.
-    const bool reuseCache =
-        _storeChats &&
-        _cacheValid &&
-        _processedLen > 0 &&
-        _promptText.size() >= _processedLen &&
-        _promptText.compare(0, _processedLen, _processedText) == 0;
+    // Tokenize the whole prompt on every turn. Reusing an exact token prefix
+    // (instead of comparing rendered text) is robust against templates that
+    // trim or otherwise normalize whitespace in the assistant message.
+    std::vector<llama_token> promptTokens = common_tokenize(
+        llama_model_get_vocab(_model),
+        rendered.text,
+        /*add_special=*/true,
+        /*parse_special=*/true
+    );
 
-    if (!reuseCache) {
+    const size_t kvSize = _kvTokens.size();
+    size_t reuseLen = 0;
+    if (_storeChats && _cacheValid) {
+        const size_t n = std::min(kvSize, promptTokens.size());
+        while (reuseLen < n && _kvTokens[reuseLen] == promptTokens[reuseLen]) {
+            ++reuseLen;
+        }
+        // Drop the cached tokens that no longer match the new prompt. If the
+        // memory module cannot remove a partial sequence, start over.
+        if (reuseLen > 0 && reuseLen < kvSize) {
+            if (!llama_memory_seq_rm(
+                    llama_get_memory(_ctx), 0, (llama_pos) reuseLen, -1)) {
+                LOGi("startCompletion: partial KV removal failed, resetting");
+                reuseLen = 0;
+            }
+        }
+    }
+    if (reuseLen == 0) {
         _resetContext();
     }
     // The cache is only reusable again once this turn completes cleanly.
     _cacheValid = false;
 
-    const size_t start = reuseCache ? _processedLen : 0;
-    const std::string delta = _promptText.substr(start);
-    _promptTokens = common_tokenize(
-        llama_model_get_vocab(_model),
-        delta,
-        /*add_special=*/start == 0,
-        /*parse_special=*/true
-    );
+    // The KV cache already holds promptTokens[0, reuseLen).
+    _kvTokens = promptTokens;
+    _promptTokens.assign(promptTokens.begin() + reuseLen, promptTokens.end());
+
+    // A new user message always adds tokens, but guard against an empty batch
+    // in case a template ignores it.
+    if (_promptTokens.empty() && !promptTokens.empty()) {
+        _resetContext();
+        _kvTokens = promptTokens;
+        _promptTokens = promptTokens;
+    }
 
     // create a llama_batch containing a single sequence
     // see llama_batch_init for more details
@@ -178,8 +191,8 @@ LLMInference::startCompletion(const char *query) {
     _batch.token = _promptTokens.data();
     _batch.n_tokens = _promptTokens.size();
 
-    LOGi("startCompletion: %zu new tokens, %zu prompt chars, cache reused = %d",
-         _promptTokens.size(), _promptText.size(), reuseCache ? 1 : 0);
+    LOGi("startCompletion: prompt=%zu kv=%zu reuse=%zu decode=%zu",
+         promptTokens.size(), kvSize, reuseLen, _promptTokens.size());
 
     return rendered.usedJinja;
 }
@@ -242,14 +255,10 @@ LLMInference::completionLoop() {
     _currToken = llama_sampler_sample(_sampler, _ctx, -1);
     if (llama_vocab_is_eog(llama_model_get_vocab(_model), _currToken)) {
         addChatMessage(_response.c_str(), "assistant");
-        // If a multi-byte character was cut off by the EOG token, the KV cache
-        // holds bytes that are not part of the rendered text, so don't reuse it.
-        if (_storeChats && _cacheResponseTokens.empty()) {
-            // The KV cache now holds the prompt and the generated tokens,
-            // which is exactly the text rendered for the next turn's prefix.
-            _processedText = _promptText + _response;
-            _processedLen  = _processedText.size();
-            _cacheValid    = true;
+        // The KV cache now holds the prompt and every generated token, so the
+        // next turn can reuse it as long as its prompt shares that prefix.
+        if (_storeChats) {
+            _cacheValid = true;
         }
         _response.clear();
         return "[EOG]";
@@ -265,6 +274,8 @@ LLMInference::completionLoop() {
     // in the KV cache
     _batch.token = &_currToken;
     _batch.n_tokens = 1;
+    // This token is decoded at the start of the next completionLoop() call.
+    _kvTokens.push_back(_currToken);
 
     if (_isValidUtf8(_cacheResponseTokens.c_str())) {
         _response += _cacheResponseTokens;
@@ -280,11 +291,6 @@ void
 LLMInference::stopCompletion() {
     if (_storeChats && !_response.empty()) {
         addChatMessage(_response.c_str(), "assistant");
-        if (_cacheResponseTokens.empty()) {
-            _processedText = _promptText + _response;
-            _processedLen  = _processedText.size();
-            _cacheValid    = true;
-        }
     }
     _response.clear();
 }

@@ -25,16 +25,14 @@ class LLMInference {
     std::vector<llama_token> _promptTokens;
     const char*              _chatTemplate;
 
-    // Full rendered prompt for the current turn (with the generation prompt).
-    std::string _promptText;
-    // Text already fed to the KV cache in this session. This is the rendered
-    // prompt followed by the tokens generated for it. On the next turn only
-    // the newly appended text is tokenized and decoded.
-    std::string _processedText;
-    size_t      _processedLen = 0;
+    // Token sequence currently stored in the KV cache: the last rendered
+    // prompt followed by the tokens generated for it. On the next turn the
+    // newly rendered prompt is tokenized and only the suffix after the
+    // longest common prefix is decoded.
+    std::vector<llama_token> _kvTokens;
     // True only after a turn completed cleanly. A cancelled or failed turn
     // leaves it false so the next turn rebuilds the context from scratch.
-    bool        _cacheValid = false;
+    bool                     _cacheValid = false;
 
     struct RenderedPrompt {
         std::string text;
