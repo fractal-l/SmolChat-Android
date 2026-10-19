@@ -1,15 +1,19 @@
 package io.shubham0204.smollmandroid.ui.screens.chat.messages
 
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,8 +21,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -32,8 +39,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Cpu
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.ChatMessage
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.createChatMessageOptionsDialog
@@ -62,80 +71,118 @@ fun LazyItemScope.MessageListItem(
     onMessageRollback: () -> Unit,
     modifier: Modifier = Modifier,
     allowEditing: Boolean,
+    assistantName: String = "Assistant",
+    isStreaming: Boolean = false,
 ) {
     if (isUserMessage) {
         UserMessageListItem(
-            message,
-            allowEditing,
-            onCopyClicked,
-            onShareClicked,
-            onMessageEdited,
-            onMessageRollback,
+            message = message,
+            allowEditing = allowEditing,
+            onCopyClicked = onCopyClicked,
+            onShareClicked = onShareClicked,
+            onMessageEdited = onMessageEdited,
+            onMessageRollback = onMessageRollback,
+            modifier = modifier,
         )
     } else {
         LLMMessageListItem(
-            modifier,
-            message,
-            onCopyClicked,
-            onShareClicked,
-            onCodeSnippetCopyClicked,
-            onMessageRollback,
-            responseGenerationSpeed,
-            responseGenerationTimeSecs
+            modifier = modifier,
+            message = message,
+            assistantName = assistantName,
+            isStreaming = isStreaming,
+            onCopyClicked = onCopyClicked,
+            onShareClicked = onShareClicked,
+            onCodeSnippetCopyClicked = onCodeSnippetCopyClicked,
+            onMessageRollback = onMessageRollback,
+            responseGenerationSpeed = responseGenerationSpeed,
+            responseGenerationTimeSecs = responseGenerationTimeSecs,
         )
     }
 }
 
 @Composable
-private fun LazyItemScope.UserMessageListItem(
+private fun UserMessageListItem(
     message: ChatMessage,
     allowEditing: Boolean,
     onCopyClicked: () -> Unit,
     onShareClicked: () -> Unit,
     onMessageEdited: (String) -> Unit,
     onMessageRollback: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var isEditing by rememberSaveable(message.id) { mutableStateOf(false) }
     var editedText by rememberSaveable(message.id) { mutableStateOf(message.message) }
+
     Row(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.Bottom,
     ) {
-        Column(horizontalAlignment = Alignment.End) {
-            if (isEditing) {
-                TextField(
-                    value = editedText,
-                    onValueChange = { editedText = it },
-                    modifier =
-                        Modifier
-                            .padding(8.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHighest,
-                                RoundedCornerShape(16.dp),
-                            )
-                            .padding(8.dp)
-                            .widthIn(max = 250.dp),
-                    colors =
-                        TextFieldDefaults.colors(
-                            errorContainerColor = Color.Transparent,
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                        ),
-                )
-            } else {
+        if (isEditing) {
+            Surface(
+                shape = RoundedCornerShape(22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.widthIn(max = 320.dp),
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    TextField(
+                        value = editedText,
+                        onValueChange = { editedText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 1,
+                        maxLines = 8,
+                        colors =
+                            TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                errorContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                disabledIndicatorColor = Color.Transparent,
+                            ),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        TextButton(
+                            onClick = {
+                                editedText = message.message
+                                isEditing = false
+                            }
+                        ) {
+                            Text(stringResource(R.string.dialog_neg_cancel))
+                        }
+                        TextButton(
+                            onClick = {
+                                isEditing = false
+                                onMessageEdited(editedText)
+                            }
+                        ) {
+                            Text(stringResource(R.string.edit_chat_message_done))
+                        }
+                    }
+                }
+            }
+        } else {
+            Surface(
+                shape =
+                    RoundedCornerShape(
+                        topStart = 22.dp,
+                        topEnd = 22.dp,
+                        bottomEnd = 6.dp,
+                        bottomStart = 22.dp,
+                    ),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.widthIn(max = 320.dp),
+            ) {
                 ChatMessageText(
-                    modifier =
-                        Modifier
-                            .padding(4.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainerHighest,
-                                RoundedCornerShape(16.dp),
-                            )
-                            .padding(8.dp)
-                            .widthIn(max = 250.dp),
-                    textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    textColor = MaterialTheme.colorScheme.onPrimaryContainer.toArgb(),
                     textSize = 16f,
                     message = message.renderedMessage,
                     onLongClick = {
@@ -149,106 +196,147 @@ private fun LazyItemScope.UserMessageListItem(
                             onShareClick = { onShareClicked() },
                             onRollbackClick = { onMessageRollback() },
                             showRollbackOption = true,
-                            showCopyCodeSnippetOption = false
+                            showCopyCodeSnippetOption = false,
                         )
                     },
                 )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (allowEditing) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    if (isEditing) {
-                        Text(
-                            text = stringResource(R.string.edit_chat_message_done),
-                            modifier =
-                                Modifier.clickable {
-                                    isEditing = false
-                                    onMessageEdited(editedText)
-                                },
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.dialog_neg_cancel),
-                            modifier =
-                                Modifier.clickable {
-                                    editedText = message.message
-                                    isEditing = false
-                                },
-                            style = MaterialTheme.typography.labelMedium,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(16.dp))
             }
         }
     }
 }
 
 @Composable
-private fun LazyItemScope.LLMMessageListItem(
+private fun LLMMessageListItem(
     modifier: Modifier,
     message: ChatMessage,
+    assistantName: String,
+    isStreaming: Boolean,
     onCopyClicked: () -> Unit,
     onShareClicked: () -> Unit,
     onCodeSnippetCopyClicked: (List<String>) -> Unit,
     onMessageRollback: () -> Unit,
     responseGenerationSpeed: Float?,
-    responseGenerationTimeSecs: Int?
+    responseGenerationTimeSecs: Int?,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Spacer(modifier = Modifier.width(8.dp))
-        Column {
-            ChatMessageText(
-                // to make pointerInput work in MarkdownText use disableLinkMovementMethod
-                // https://github.com/jeziellago/compose-markdown/issues/85#issuecomment-2184040304
-                modifier =
-                    Modifier
-                        .padding(4.dp)
-                        .background(MaterialTheme.colorScheme.surface)
-                        .padding(4.dp)
-                        .fillMaxSize(),
-                textColor = MaterialTheme.colorScheme.onBackground.toArgb(),
-                textSize = 16f,
-                message = message.renderedMessage,
-                onLongClick = {
-                    val messageProperties = buildMessageProperties(message.message)
-                    createChatMessageOptionsDialog(
-                        showEditOption = false,
-                        onEditClick = {
-                            /** Not applicable as showEditOption is set to false * */
-                        },
-                        onCopyClick = { onCopyClicked() },
-                        onShareClick = { onShareClicked() },
-                        onRollbackClick = { onMessageRollback() },
-                        showRollbackOption = true,
-                        onCodeSnippetCopyClick = {
-                            onCodeSnippetCopyClicked(messageProperties.codeSnippets)
-                        },
-                        showCopyCodeSnippetOption = messageProperties.codeSnippets.isNotEmpty()
-                    )
-                },
+        AssistantAvatar()
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = assistantName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                responseGenerationSpeed?.let {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "%.2f tokens/s".format(it), fontSize = 8.sp)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(2.dp)
-                                .clip(CircleShape)
-                                .background(Color.DarkGray)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(text = "$responseGenerationTimeSecs s", fontSize = 8.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            Surface(
+                shape =
+                    RoundedCornerShape(
+                        topStart = 4.dp,
+                        topEnd = 22.dp,
+                        bottomEnd = 22.dp,
+                        bottomStart = 22.dp,
+                    ),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border =
+                    BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+                    ),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                ChatMessageText(
+                    modifier = Modifier.padding(14.dp),
+                    textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
+                    textSize = 16f,
+                    message =
+                        if (isStreaming) {
+                            message.renderedMessage.withStreamingCursor(
+                                MaterialTheme.colorScheme.primary.toArgb()
+                            )
+                        } else {
+                            message.renderedMessage
+                        },
+                    onLongClick = {
+                        val messageProperties = buildMessageProperties(message.message)
+                        createChatMessageOptionsDialog(
+                            showEditOption = false,
+                            onEditClick = {
+                                /** Not applicable as showEditOption is set to false * */
+                            },
+                            onCopyClick = { onCopyClicked() },
+                            onShareClick = { onShareClicked() },
+                            onRollbackClick = { onMessageRollback() },
+                            showRollbackOption = true,
+                            onCodeSnippetCopyClick = {
+                                onCodeSnippetCopyClicked(messageProperties.codeSnippets)
+                            },
+                            showCopyCodeSnippetOption = messageProperties.codeSnippets.isNotEmpty(),
+                        )
+                    },
+                )
+            }
+            if (responseGenerationSpeed != null || responseGenerationTimeSecs != null) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    responseGenerationSpeed?.let {
+                        Text(
+                            text = "%.1f tok/s".format(it),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    responseGenerationTimeSecs?.let {
+                        Text(
+                            text = "${it}s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+internal fun AssistantAvatar(modifier: Modifier = Modifier) {
+    Box(
+        modifier =
+            modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = FeatherIcons.Cpu,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+private fun Spanned.withStreamingCursor(color: Int): Spanned {
+    val builder = SpannableStringBuilder(this)
+    val start = builder.length
+    builder.append(" ▍")
+    builder.setSpan(
+        ForegroundColorSpan(color),
+        start,
+        builder.length,
+        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+    )
+    return builder
 }

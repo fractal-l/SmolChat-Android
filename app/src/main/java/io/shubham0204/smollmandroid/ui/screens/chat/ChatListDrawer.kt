@@ -44,7 +44,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,16 +59,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
+import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.FolderPlus
 import compose.icons.feathericons.List
+import compose.icons.feathericons.MessageCircle
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.PlusSquare
@@ -131,37 +138,86 @@ fun DrawerUI(
         ) {
             val context = LocalContext.current
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Button(
+                Box(
+                    modifier =
+                        Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = FeatherIcons.Cpu,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = stringResource(R.string.app_name),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = "On-device AI",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FilledTonalButton(
                     onClick = {
                         onCloseDrawer()
                         onEvent(ChatScreenUIEvent.ChatEvents.NewChat)
-                    }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
                 ) {
-                    Icon(FeatherIcons.Plus, contentDescription = "New Chat")
+                    Icon(
+                        FeatherIcons.Plus,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         stringResource(R.string.chat_drawer_new_chat),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
-                Button(
+                FilledTonalButton(
                     onClick = {
                         onCloseDrawer()
                         onEvent(
                             ChatScreenUIEvent.DialogEvents.ToggleTaskListBottomList(visible = true)
                         )
-                    }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
                 ) {
-                    Icon(FeatherIcons.PlusSquare, contentDescription = "New Task")
+                    Icon(
+                        FeatherIcons.PlusSquare,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         stringResource(R.string.chat_drawer_new_task),
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             ChatsAndFoldersList(
                 currentChat,
                 chats.toImmutableList(),
@@ -226,83 +282,31 @@ private fun ChatsAndFoldersList(
     onAddFolder: (String) -> Unit,
 ) {
     Column {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onManageTasksClick() },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                FeatherIcons.List,
-                contentDescription = "Manage Tasks",
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                stringResource(R.string.chat_drawer_manage_tasks),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onManageASRClick() },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Default.RecordVoiceOver,
-                contentDescription = "Manage Speech-to-Text",
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                "Manage Speech-to-Text",
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onManageCharactersClick() },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                FeatherIcons.Users,
-                contentDescription = "Manage Characters",
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                stringResource(R.string.chat_drawer_characters),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onSettingsClick() },
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                FeatherIcons.Settings,
-                contentDescription = "Settings",
-                tint = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                stringResource(R.string.chat_drawer_settings),
-                style = MaterialTheme.typography.labelLarge,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
+        DrawerMenuItem(
+            icon = FeatherIcons.List,
+            label = stringResource(R.string.chat_drawer_manage_tasks),
+            onClick = onManageTasksClick,
+        )
+        DrawerMenuItem(
+            icon = Icons.Default.RecordVoiceOver,
+            label = "Manage Speech-to-Text",
+            onClick = onManageASRClick,
+        )
+        DrawerMenuItem(
+            icon = FeatherIcons.Users,
+            label = stringResource(R.string.chat_drawer_characters),
+            onClick = onManageCharactersClick,
+        )
+        DrawerMenuItem(
+            icon = FeatherIcons.Settings,
+            label = stringResource(R.string.chat_drawer_settings),
+            onClick = onSettingsClick,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         FoldersList(
             chats,
             folders,
@@ -318,14 +322,45 @@ private fun ChatsAndFoldersList(
 }
 
 @Composable
+private fun DrawerMenuItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
 private fun ChatsList(currentChat: Chat?, chats: ImmutableList<Chat>, onItemClick: (Chat) -> Unit) {
     LazyColumn {
         item {
             Text(
                 stringResource(R.string.chat_drawer_previous_chat),
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
         }
         items(chats) { chat -> ChatListItem(chat, onItemClick, currentChat?.id == chat.id) }
     }
@@ -341,38 +376,78 @@ private fun LazyItemScope.ChatListItem(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(8.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .padding(horizontal = 4.dp, vertical = 2.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    if (isCurrentlySelected) {
+                        MaterialTheme.colorScheme.secondaryContainer
+                    } else {
+                        Color.Transparent
+                    }
+                )
                 .clickable { onItemClick(chat) }
+                .padding(horizontal = 10.dp, vertical = 10.dp)
                 .animateItem(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
+        Box(
+            modifier =
+                Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (isCurrentlySelected) {
+                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.12f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceContainerHigh
+                        }
+                    ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector =
                     if (chat.isTask) {
-                        "[Task] " + chat.name
+                        FeatherIcons.CheckSquare
                     } else {
-                        chat.name
+                        FeatherIcons.MessageCircle
                     },
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = DateUtils.getRelativeTimeSpanString(chat.dateUsed.time).toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                )
-            }
-            if (isCurrentlySelected) {
-                Box(
-                    modifier =
-                        Modifier
-                            .padding(start = 4.dp)
-                            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
-                            .size(10.dp)
-                ) {}
-            }
+                contentDescription = null,
+                tint =
+                    if (isCurrentlySelected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    },
+                modifier = Modifier.size(17.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                if (chat.isTask) {
+                    "[Task] " + chat.name
+                } else {
+                    chat.name
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = if (isCurrentlySelected) FontWeight.SemiBold else FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = DateUtils.getRelativeTimeSpanString(chat.dateUsed.time).toString(),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (isCurrentlySelected) {
+            Box(
+                modifier =
+                    Modifier
+                        .padding(start = 4.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .size(8.dp)
+            ) {}
         }
     }
 }
@@ -388,10 +463,14 @@ private fun FoldersList(
     onAddFolder: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Text(
             stringResource(R.string.chat_drawer_folders),
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
         )
         IconButton(

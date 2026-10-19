@@ -1,20 +1,23 @@
 package io.shubham0204.smollmandroid.ui.screens.chat
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -30,6 +33,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
+import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MicOff
 import compose.icons.feathericons.Send
@@ -48,114 +52,176 @@ fun MessageInput(
     defaultQuestion: String? = null,
 ) {
     if (currChat.llmModelId == -1L) {
-        Text(modifier = Modifier.padding(8.dp), text = stringResource(R.string.chat_select_model))
-    } else {
-        var questionText by rememberSaveable { mutableStateOf(defaultQuestion ?: "") }
-        val keyboardController = LocalSoftwareKeyboardController.current
+        ComposerStatusCard(text = stringResource(R.string.chat_select_model))
+        return
+    }
+    if (modelLoadingState == ModelLoadingState.FAILURE) {
+        ComposerStatusCard(text = stringResource(R.string.chat_model_cannot_be_loaded))
+        return
+    }
+    if (modelLoadingState != ModelLoadingState.SUCCESS) {
+        ComposerStatusCard(
+            text = stringResource(R.string.chat_loading_model),
+            showProgress = true,
+        )
+        return
+    }
+
+    var questionText by rememberSaveable { mutableStateOf(defaultQuestion ?: "") }
+    val keyboardController = LocalSoftwareKeyboardController.current
+
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 1.dp,
+    ) {
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(8.dp),
+            modifier =
+                Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.Bottom,
         ) {
-            AnimatedVisibility(modelLoadingState == ModelLoadingState.IN_PROGRESS) {
-                Text(
-                    modifier = Modifier.padding(8.dp),
-                    text = stringResource(R.string.chat_loading_model),
-                )
-            }
-            AnimatedVisibility(modelLoadingState == ModelLoadingState.FAILURE) {
-                Text(
-                    modifier = Modifier.padding(8.dp),
-                    text = stringResource(R.string.chat_model_cannot_be_loaded),
-                )
-            }
-            AnimatedVisibility(modelLoadingState == ModelLoadingState.SUCCESS) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (audioTranscriptionUIState.isAvailable) {
-                        IconButton(
-                            onClick = {
-                                if (audioTranscriptionUIState.isRecording) {
-                                    onEvent(ChatScreenUIEvent.ChatEvents.StopAudioTranscription)
-                                } else {
-                                    onEvent(ChatScreenUIEvent.ChatEvents.StartAudioTranscription {
-                                        questionText = it
-                                    })
+            if (audioTranscriptionUIState.isAvailable) {
+                IconButton(
+                    onClick = {
+                        if (audioTranscriptionUIState.isRecording) {
+                            onEvent(ChatScreenUIEvent.ChatEvents.StopAudioTranscription)
+                        } else {
+                            onEvent(
+                                ChatScreenUIEvent.ChatEvents.StartAudioTranscription {
+                                    questionText = it
                                 }
-                            }
-                        ) {
-                            if (audioTranscriptionUIState.isRecording) {
-                                Icon(
-                                    FeatherIcons.MicOff,
-                                    contentDescription = "Stop Audio Transcription"
-                                )
-                            } else {
-                                Icon(
-                                    FeatherIcons.Mic,
-                                    contentDescription = "Start Audio Transcription"
-                                )
-                            }
+                            )
                         }
-                    }
-                    TextField(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        value = questionText,
-                        onValueChange = { questionText = it },
-                        shape = RoundedCornerShape(16.dp),
-                        colors =
-                            TextFieldDefaults.colors(
-                                disabledTextColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
+                    },
+                    modifier =
+                        Modifier
+                            .size(44.dp)
+                            .background(
+                                if (audioTranscriptionUIState.isRecording) {
+                                    MaterialTheme.colorScheme.errorContainer
+                                } else {
+                                    Color.Transparent
+                                },
+                                CircleShape,
                             ),
-                        placeholder = {
-                            Text(
-                                text =
-                                    if (audioTranscriptionUIState.isRecording) {
-                                        stringResource(R.string.chat_listening)
-                                    } else {
-                                        stringResource(R.string.chat_ask_question)
-                                    }
-                            )
-                        }
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    if (isGeneratingResponse) {
-                        Box(contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator()
-                            IconButton(
-                                onClick = { onEvent(ChatScreenUIEvent.ChatEvents.StopGeneration) }
-                            ) {
-                                Icon(FeatherIcons.StopCircle, contentDescription = "Stop")
-                            }
-                        }
+                ) {
+                    if (audioTranscriptionUIState.isRecording) {
+                        Icon(
+                            FeatherIcons.MicOff,
+                            contentDescription = stringResource(R.string.chat_stop_audio),
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
                     } else {
-                        IconButton(
-                            enabled = questionText.isNotEmpty(),
-                            modifier =
-                                Modifier.background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    CircleShape,
-                                ),
-                            onClick = {
-                                keyboardController?.hide()
-                                onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(questionText))
-                                questionText = ""
-                            },
-                        ) {
-                            Icon(
-                                imageVector = FeatherIcons.Send,
-                                contentDescription = "Send text",
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                            )
-                        }
+                        Icon(
+                            FeatherIcons.Mic,
+                            contentDescription = stringResource(R.string.chat_start_audio),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
+                Spacer(modifier = Modifier.width(2.dp))
+            }
+            TextField(
+                modifier = Modifier.weight(1f),
+                value = questionText,
+                onValueChange = { questionText = it },
+                shape = RoundedCornerShape(22.dp),
+                minLines = 1,
+                maxLines = 5,
+                colors =
+                    TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                placeholder = {
+                    Text(
+                        text =
+                            if (audioTranscriptionUIState.isRecording) {
+                                stringResource(R.string.chat_listening)
+                            } else {
+                                stringResource(R.string.chat_message_hint)
+                            }
+                    )
+                },
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            if (isGeneratingResponse) {
+                FilledIconButton(
+                    onClick = { onEvent(ChatScreenUIEvent.ChatEvents.StopGeneration) },
+                    modifier = Modifier.size(48.dp),
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        ),
+                ) {
+                    Icon(
+                        FeatherIcons.StopCircle,
+                        contentDescription = stringResource(R.string.chat_stop_generating),
+                    )
+                }
+            } else {
+                FilledIconButton(
+                    enabled = questionText.isNotBlank(),
+                    onClick = {
+                        keyboardController?.hide()
+                        onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(questionText))
+                        questionText = ""
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = FeatherIcons.Send,
+                        contentDescription = stringResource(R.string.chat_send_message),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ComposerStatusCard(text: String, showProgress: Boolean = false) {
+    Surface(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (showProgress) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = FeatherIcons.Cpu,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Column {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

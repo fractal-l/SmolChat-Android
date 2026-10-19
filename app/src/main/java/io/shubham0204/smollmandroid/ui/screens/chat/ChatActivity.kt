@@ -40,6 +40,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,16 +50,17 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -281,66 +283,73 @@ fun ChatActivityScreenUI(
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
                 topBar = {
-                    TopAppBar(
-                        modifier = Modifier.shadow(2.dp),
-                        title = {
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                AppBarTitleText(uiState.chat.name)
-                                Text(
+                    Column {
+                        TopAppBar(
+                            colors =
+                                TopAppBarDefaults.topAppBarColors(
+                                    containerColor = MaterialTheme.colorScheme.surface,
+                                ),
+                            title = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    AppBarTitleText(uiState.chat.name)
                                     if (uiState.chat.llmModelId != -1L) {
-                                        uiState.chat.llmModel?.name ?: ""
-                                    } else {
-                                        ""
-                                    },
-                                    style = MaterialTheme.typography.labelSmall,
-                                )
-                            }
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                                Icon(
-                                    FeatherIcons.Menu,
-                                    contentDescription = stringResource(R.string.chat_view_chats),
-                                    tint = MaterialTheme.colorScheme.secondary,
-                                )
-                            }
-                        },
-                        actions = {
-                            Box {
-                                IconButton(
-                                    onClick = {
-                                        onEvent(
-                                            ChatScreenUIEvent.DialogEvents.ToggleMoreOptionsPopup(
-                                                visible = true
-                                            )
+                                        Text(
+                                            text = uiState.chat.llmModel?.name ?: "",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                         )
                                     }
-                                ) {
+                                }
+                            },
+                            navigationIcon = {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                     Icon(
-                                        FeatherIcons.MoreVertical,
-                                        contentDescription = "Options",
-                                        tint = MaterialTheme.colorScheme.secondary,
+                                        FeatherIcons.Menu,
+                                        contentDescription = stringResource(R.string.chat_view_chats),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
-                                ChatMoreOptionsPopup(
-                                    uiState.chat,
-                                    uiState.showMoreOptionsPopup,
-                                    uiState.memoryUsage != null,
-                                    onEditChatSettingsClick = {
-                                        onEditChatParamsClick(
-                                            uiState.chat,
-                                            uiState.chat.llmModel?.contextSize ?: 0,
+                            },
+                            actions = {
+                                Box {
+                                    IconButton(
+                                        onClick = {
+                                            onEvent(
+                                                ChatScreenUIEvent.DialogEvents.ToggleMoreOptionsPopup(
+                                                    visible = true
+                                                )
+                                            )
+                                        }
+                                    ) {
+                                        Icon(
+                                            FeatherIcons.MoreVertical,
+                                            contentDescription = "Options",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
-                                    },
-                                    onBenchmarkModelClick = { onBenchmarkModelClick() },
-                                    onEvent = onEvent,
-                                )
-                            }
-                        },
-                    )
+                                    }
+                                    ChatMoreOptionsPopup(
+                                        uiState.chat,
+                                        uiState.showMoreOptionsPopup,
+                                        uiState.memoryUsage != null,
+                                        onEditChatSettingsClick = {
+                                            onEditChatParamsClick(
+                                                uiState.chat,
+                                                uiState.chat.llmModel?.contextSize ?: 0,
+                                            )
+                                        },
+                                        onBenchmarkModelClick = { onBenchmarkModelClick() },
+                                        onEvent = onEvent,
+                                    )
+                                }
+                            },
+                        )
+                        HorizontalDivider(
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                        )
+                    }
                 },
             ) { innerPadding ->
                 Column(
@@ -406,14 +415,17 @@ private fun ColumnScope.ScreenUI(uiState: ChatScreenUIState, onEvent: (ChatScree
         RAMUsageLabel(uiState.memoryUsage)
     }
     Spacer(modifier = Modifier.height(4.dp))
+    val assistantName =
+        uiState.chat.llmModel?.name ?: stringResource(R.string.chat_role_assistant)
     MessagesList(
-        uiState.messages,
-        uiState.isGeneratingResponse,
-        uiState.renderedPartialResponse,
-        uiState.chat.id,
-        uiState.responseGenerationsSpeed,
-        uiState.responseGenerationTimeSecs,
-        onEvent,
+        messages = uiState.messages,
+        isGeneratingResponse = uiState.isGeneratingResponse,
+        renderedPartialResponse = uiState.renderedPartialResponse,
+        chatId = uiState.chat.id,
+        assistantName = assistantName,
+        responseGenerationsSpeed = uiState.responseGenerationsSpeed,
+        responseGenerationTimeSecs = uiState.responseGenerationTimeSecs,
+        onEvent = onEvent,
     )
     MessageInput(
         uiState.chat,

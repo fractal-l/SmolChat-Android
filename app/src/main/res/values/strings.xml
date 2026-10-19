@@ -4,6 +4,14 @@
     <string name="chat_loading_model">Loading model...</string>
     <string name="chat_model_cannot_be_loaded">The model selected for the chat cannot be loaded</string>
     <string name="chat_ask_question">Ask a question</string>
+    <string name="chat_role_assistant">Assistant</string>
+    <string name="chat_empty_title">Start a conversation</string>
+    <string name="chat_empty_subtitle">Ask anything. Everything runs locally on your device.</string>
+    <string name="chat_message_hint">Message</string>
+    <string name="chat_send_message">Send message</string>
+    <string name="chat_stop_generating">Stop generating</string>
+    <string name="chat_start_audio">Start audio transcription</string>
+    <string name="chat_stop_audio">Stop audio transcription</string>
     <string name="chat_model_deleted">Model \'%1$s\' deleted</string>
     <string name="chat_select_chat">Select a chat</string>
     <string name="chat_view_chats">View Chats</string>
