@@ -6,6 +6,8 @@ plugins {
     kotlin("plugin.serialization") version "2.1.0"
 }
 
+val releaseKeystoreFile = rootProject.file(System.getenv("RELEASE_KEYSTORE_FILE") ?: "release.p12")
+
 android {
     namespace = "io.shubham0204.smollmandroid"
     compileSdk = 35
@@ -22,11 +24,22 @@ android {
     }
 
     signingConfigs {
+        val keystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+        val keystoreAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
+        val keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+        val hasReleaseSigning =
+            releaseKeystoreFile.exists() &&
+                !keystorePassword.isNullOrBlank() &&
+                !keystoreAlias.isNullOrBlank() &&
+                !keyPassword.isNullOrBlank()
         create("release") {
-            storeFile = file("../keystore.jks")
-            storePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-            keyAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
-            keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            if (hasReleaseSigning) {
+                storeFile = releaseKeystoreFile
+                storeType = System.getenv("RELEASE_KEYSTORE_TYPE") ?: "PKCS12"
+                storePassword = keystorePassword
+                keyAlias = keystoreAlias
+                this.keyPassword = keyPassword
+            }
         }
     }
 
@@ -40,7 +53,15 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            val releaseSigningConfig = signingConfigs.getByName("release")
+            // Fall back to the debug key so forks and local builds can produce an APK without
+            // access to the release keystore.
+            signingConfig =
+                if (releaseSigningConfig.storeFile != null) {
+                    releaseSigningConfig
+                } else {
+                    signingConfigs.getByName("debug")
+                }
         }
     }
 

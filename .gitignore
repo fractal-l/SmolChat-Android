@@ -11,3 +11,11 @@ local.properties
 .kotlin
 ktlint
 ktlint.bat
+
+# Signing material must never be committed
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore-b64.txt
+release.p12
