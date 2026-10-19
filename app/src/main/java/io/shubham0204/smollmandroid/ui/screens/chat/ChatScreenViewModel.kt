@@ -20,6 +20,7 @@ import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.app.ActivityManager.MemoryInfo
 import android.content.Context
+import android.text.SpannableString
 import android.text.Spanned
 import android.util.Log
 import android.util.LruCache
@@ -639,9 +640,14 @@ class ChatScreenViewModel(
                                                 // Cache hit: reuse existing Spanned instance
                                                 chatMessage.renderedMessage = cached.second
                                             } else {
-                                                // Cache miss or message edited: parse Markdown and update cache
+                                                // User prompts are shown verbatim; only
+                                                // assistant messages are Markdown.
                                                 val rendered =
-                                                    mdRenderer.render(chatMessage.message)
+                                                    if (chatMessage.isUserMessage) {
+                                                        SpannableString(chatMessage.message)
+                                                    } else {
+                                                        mdRenderer.render(chatMessage.message)
+                                                    }
                                                 renderedMessageCache.put(
                                                     chatMessage.id,
                                                     chatMessage.message to rendered,
