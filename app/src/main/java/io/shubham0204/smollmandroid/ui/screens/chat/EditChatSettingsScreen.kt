@@ -65,7 +65,9 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Search
 import compose.icons.feathericons.Trash2
+import compose.icons.feathericons.Users
 import io.shubham0204.smollmandroid.R
+import io.shubham0204.smollmandroid.data.CharacterPreset
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.SystemPrompt
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
@@ -82,7 +84,6 @@ data class EditableChatSettings(
     val temperature: Float,
     val contextSize: Int,
     val nThreads: Int,
-    val chatTemplate: String,
     val useMmap: Boolean,
     val useMlock: Boolean,
     val isTask: Boolean,
@@ -96,7 +97,6 @@ data class EditableChatSettings(
                 temperature = chat.temperature,
                 contextSize = chat.contextSize,
                 nThreads = chat.nThreads,
-                chatTemplate = chat.chatTemplate,
                 useMmap = chat.useMmap,
                 useMlock = chat.useMlock,
                 isTask = chat.isTask,
@@ -111,7 +111,6 @@ data class EditableChatSettings(
         existingChat.temperature = temperature
         existingChat.contextSize = contextSize
         existingChat.nThreads = nThreads
-        existingChat.chatTemplate = chatTemplate
         existingChat.useMmap = useMmap
         existingChat.useMlock = useMlock
         return existingChat
@@ -125,6 +124,7 @@ private fun PreviewEditChatSettingsScreen() {
         settings = EditableChatSettings.fromChat(Chat()),
         llmModelContextSize = 2048,
         systemPrompts = persistentListOf(),
+        characterPresets = persistentListOf(),
         onUpdateChat = {},
         onAddSystemPrompt = { _, _ -> },
         onDeleteSystemPrompt = {},
@@ -138,6 +138,7 @@ fun EditChatSettingsScreen(
     settings: EditableChatSettings,
     llmModelContextSize: Int,
     systemPrompts: ImmutableList<SystemPrompt>,
+    characterPresets: ImmutableList<CharacterPreset>,
     onUpdateChat: (EditableChatSettings) -> Unit,
     onAddSystemPrompt: (String, String) -> Unit,
     onDeleteSystemPrompt: (Long) -> Unit,
@@ -150,12 +151,12 @@ fun EditChatSettingsScreen(
     var contextSize by remember { mutableIntStateOf(settings.contextSize) }
     var nThreads by remember { mutableIntStateOf(settings.nThreads) }
     var takeContextSizeFromModel by remember { mutableStateOf(false) }
-    var chatTemplate by remember { mutableStateOf(settings.chatTemplate) }
     var useMmap by remember { mutableStateOf(settings.useMmap) }
     var useMlock by remember { mutableStateOf(settings.useMlock) }
 
     var showSystemPromptsDialog by remember { mutableStateOf(false) }
     var showAddSystemPromptDialog by remember { mutableStateOf(false) }
+    var showCharacterPresetsDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
     val totalThreads = Runtime.getRuntime().availableProcessors()
@@ -180,7 +181,6 @@ fun EditChatSettingsScreen(
                                         minP = minP,
                                         temperature = temperature,
                                         contextSize = contextSize,
-                                        chatTemplate = chatTemplate,
                                         nThreads = nThreads,
                                         useMmap = useMmap,
                                         useMlock = useMlock,
@@ -247,22 +247,15 @@ fun EditChatSettingsScreen(
                             IconButton(onClick = { showAddSystemPromptDialog = true }) {
                                 Icon(FeatherIcons.Plus, contentDescription = "Add System Prompt")
                             }
+                            IconButton(onClick = { showCharacterPresetsDialog = true }) {
+                                Icon(
+                                    FeatherIcons.Users,
+                                    contentDescription =
+                                        stringResource(R.string.chat_settings_choose_character),
+                                )
+                            }
                         }
                     },
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                TextField(
-                    modifier = Modifier.fillMaxWidth(),
-                    value = chatTemplate,
-                    onValueChange = { chatTemplate = it },
-                    label = { Text("Chat template") },
-                    keyboardOptions =
-                        KeyboardOptions.Default.copy(
-                            capitalization = KeyboardCapitalization.Sentences
-                        ),
-                    maxLines = 5,
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -457,7 +450,60 @@ fun EditChatSettingsScreen(
                 },
             )
         }
+
+        if (showCharacterPresetsDialog) {
+            CharacterPresetsDialog(
+                characterPresets = characterPresets,
+                onPresetSelected = { preset ->
+                    systemPrompt = preset.systemPrompt
+                    temperature = preset.temperature
+                    minP = preset.minP
+                    showCharacterPresetsDialog = false
+                },
+                onDismissRequest = { showCharacterPresetsDialog = false },
+            )
+        }
     }
+}
+
+@Composable
+private fun CharacterPresetsDialog(
+    characterPresets: ImmutableList<CharacterPreset>,
+    onPresetSelected: (CharacterPreset) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = { Text(stringResource(R.string.chat_settings_choose_character)) },
+        text = {
+            if (characterPresets.isEmpty()) {
+                Text(stringResource(R.string.characters_empty))
+            } else {
+                LazyColumn {
+                    items(characterPresets) { preset ->
+                        ListItem(
+                            headlineContent = { Text(preset.name) },
+                            supportingContent = {
+                                Text(
+                                    text =
+                                        "temp %.2f · min-p %.2f".format(
+                                            preset.temperature,
+                                            preset.minP,
+                                        ),
+                                    maxLines = 1,
+                                )
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onPresetSelected(preset) }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismissRequest) { Text("Close") } },
+    )
 }
 
 @Composable

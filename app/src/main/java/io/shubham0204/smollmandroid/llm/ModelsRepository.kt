@@ -51,6 +51,8 @@ class ModelsRepository(private val context: Context, private val appDB: AppDB) {
 
     fun getAvailableModelsList(): List<LLMModel> = appDB.getModelsList()
 
+    fun updateModel(model: LLMModel) = appDB.updateModel(model)
+
     fun deleteModel(id: Long) {
         appDB.getModel(id).also {
             File(it.path).delete()

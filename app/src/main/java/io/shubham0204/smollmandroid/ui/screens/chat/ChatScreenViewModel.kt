@@ -29,6 +29,8 @@ import androidx.lifecycle.viewModelScope
 import io.shubham0204.smollm.SmolLM
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.AppDB
+import io.shubham0204.smollmandroid.data.CharacterPreset
+import io.shubham0204.smollmandroid.data.CharacterPresetsStore
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.ChatMessage
 import io.shubham0204.smollmandroid.data.Folder
@@ -70,6 +72,8 @@ internal fun String.stripThinkingForClipboard() = findThinkHtmlBlockRegex.replac
 sealed class ChatScreenUIEvent {
     sealed class ChatEvents {
         data class UpdateChatModel(val model: LLMModel) : ChatScreenUIEvent()
+
+        data class UpdateModelChatTemplate(val model: LLMModel) : ChatScreenUIEvent()
 
         data object LoadChatModel : ChatScreenUIEvent()
 
@@ -162,6 +166,8 @@ data class ChatScreenUIState(
     val messages: ImmutableList<ChatMessage> = emptyList<ChatMessage>().toImmutableList(),
     val tasks: ImmutableList<Task> = emptyList<Task>().toImmutableList(),
     val systemPrompts: ImmutableList<SystemPrompt> = emptyList<SystemPrompt>().toImmutableList(),
+    val characterPresets: ImmutableList<CharacterPreset> =
+        emptyList<CharacterPreset>().toImmutableList(),
     val benchmarkResult: String? = null,
     val audioTranscriptionUIState: AudioTranscriptionUIState = AudioTranscriptionUIState(),
     val showChangeFolderDialog: Boolean = false,
@@ -179,7 +185,8 @@ class ChatScreenViewModel(
     val audioTranscriptionService: AudioTranscriptionService,
     val mdRenderer: MDRenderer,
     val sharedPrefStore: SharedPrefStore,
-    val systemPromptsStore: SystemPromptsStore
+    val systemPromptsStore: SystemPromptsStore,
+    val characterPresetsStore: CharacterPresetsStore,
 ) : ViewModel() {
     enum class ModelLoadingState {
         NOT_LOADED, // model loading not started
@@ -229,7 +236,9 @@ class ChatScreenViewModel(
                     chat.temperature,
                     !chat.isTask,
                     chat.contextSize.toLong(),
-                    chat.chatTemplate.takeIf { it.isNotBlank() && ("{%" in it || "{{" in it) },
+                    resolveChatTemplate(model, chat).takeIf {
+                        it.isNotBlank() && ("{%" in it || "{{" in it)
+                    },
                     chat.nThreads,
                     chat.useMmap,
                     chat.useMlock,
@@ -358,9 +367,23 @@ class ChatScreenViewModel(
             }
 
             is ChatScreenUIEvent.ChatEvents.UpdateChatModel -> {
-                updateChatLLMParams(event.model.id, event.model.chatTemplate)
+                updateChatLLMParams(event.model.id)
                 loadModel()
                 onEvent(ChatScreenUIEvent.DialogEvents.ToggleSelectModelListDialog(visible = false))
+            }
+
+            is ChatScreenUIEvent.ChatEvents.UpdateModelChatTemplate -> {
+                modelsRepository.updateModel(event.model)
+                if (_uiState.value.chat.llmModelId == event.model.id) {
+                    unloadModel()
+                    loadModel()
+                }
+                Toast.makeText(
+                        context,
+                        context.getString(R.string.chat_model_template_saved),
+                        Toast.LENGTH_LONG,
+                    )
+                    .show()
             }
 
             is ChatScreenUIEvent.ChatEvents.DeleteModel -> {
@@ -390,7 +413,6 @@ class ChatScreenViewModel(
                     val newTask =
                         appDB.addChat(
                             chatName = event.task.name,
-                            chatTemplate = model.chatTemplate,
                             systemPrompt = event.task.systemPrompt,
                             llmModelId = event.task.modelId,
                             isTask = true,
@@ -597,6 +619,11 @@ class ChatScreenViewModel(
                 }
             }
             launch {
+                characterPresetsStore.presets.collect { presets ->
+                    _uiState.update { it.copy(characterPresets = presets.toImmutableList()) }
+                }
+            }
+            launch {
                 _uiState
                     .map { it.chat }
                     .distinctUntilChanged()
@@ -678,10 +705,30 @@ class ChatScreenViewModel(
         }
     }
 
-    private fun updateChatLLMParams(modelId: Long, chatTemplate: String) {
-        val newChat = _uiState.value.chat.copy(llmModelId = modelId, chatTemplate = chatTemplate)
+    private fun updateChatLLMParams(modelId: Long) {
+        val newChat = _uiState.value.chat.copy(llmModelId = modelId)
         _uiState.update { it.copy(chat = newChat) }
         appDB.updateChat(newChat)
+    }
+
+    /**
+     * Chat templates are owned by models now. Chats created by older versions of the app stored a
+     * copy of the template, so use that copy (and persist it to the model) when the model has no
+     * template of its own.
+     */
+    private fun resolveChatTemplate(model: LLMModel, chat: Chat): String {
+        if (model.chatTemplate.isNotBlank()) {
+            return model.chatTemplate
+        }
+        // Migrate a legacy per-chat template to the model exactly once. Without this guard,
+        // clearing the model template later would resurrect the old chat copy.
+        val migrationKey = "chat_template_backfilled_${model.id}"
+        if (chat.chatTemplate.isNotBlank() && !sharedPrefStore.get(migrationKey, false)) {
+            sharedPrefStore.put(migrationKey, true)
+            modelsRepository.updateModel(model.copy(chatTemplate = chat.chatTemplate))
+            return chat.chatTemplate
+        }
+        return model.chatTemplate
     }
 
     /**

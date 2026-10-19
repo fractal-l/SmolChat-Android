@@ -171,6 +171,7 @@ class ChatActivity : ComponentActivity() {
                             settings,
                             route.modelContextSize,
                             uiState.systemPrompts,
+                            uiState.characterPresets,
                             onUpdateChat = { editableChatSettings ->
                                 viewModel.onEvent(
                                     ChatScreenUIEvent.ChatEvents.UpdateChatSettings(
@@ -368,6 +369,10 @@ fun ChatActivityScreenUI(
                     onModelDeleteClick = { model ->
                         onEvent(ChatScreenUIEvent.ChatEvents.DeleteModel(model))
                     },
+                    onModelUpdate = { model ->
+                        onEvent(ChatScreenUIEvent.ChatEvents.UpdateModelChatTemplate(model))
+                    },
+                    showModelEditIcon = true,
                 )
             }
             if (uiState.showTasksBottomSheet) {

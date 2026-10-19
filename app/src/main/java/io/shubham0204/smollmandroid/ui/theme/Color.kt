@@ -202,6 +202,17 @@ val surfaceContainerDarkMediumContrast = Color(0xFF282828)
 val surfaceContainerHighDarkMediumContrast = Color(0xFF333232)
 val surfaceContainerHighestDarkMediumContrast = Color(0xFF3E3D3D)
 
+// AMOLED palette: pure black backgrounds/surfaces to save power on OLED displays.
+val backgroundAmoled = Color(0xFF000000)
+val surfaceAmoled = Color(0xFF000000)
+val surfaceDimAmoled = Color(0xFF000000)
+val surfaceBrightAmoled = Color(0xFF2A2A2A)
+val surfaceContainerLowestAmoled = Color(0xFF000000)
+val surfaceContainerLowAmoled = Color(0xFF0A0A0A)
+val surfaceContainerAmoled = Color(0xFF111111)
+val surfaceContainerHighAmoled = Color(0xFF1A1A1A)
+val surfaceContainerHighestAmoled = Color(0xFF222222)
+
 val primaryDarkHighContrast = Color(0xFFEDEFFF)
 val onPrimaryDarkHighContrast = Color(0xFF000000)
 val primaryContainerDarkHighContrast = Color(0xFFACC1FF)

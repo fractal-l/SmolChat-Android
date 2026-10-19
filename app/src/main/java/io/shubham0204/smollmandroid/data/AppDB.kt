@@ -151,6 +151,9 @@ class AppDB(context: Context) {
     fun getModelsList(): List<LLMModel> =
         runBlocking(Dispatchers.IO) { db.llmModelDao().getAllModelsList() }
 
+    fun updateModel(model: LLMModel) =
+        runBlocking(Dispatchers.IO) { db.llmModelDao().updateModel(model) }
+
     fun deleteModel(id: Long) = runBlocking(Dispatchers.IO) { db.llmModelDao().deleteModel(id) }
 
     // Tasks

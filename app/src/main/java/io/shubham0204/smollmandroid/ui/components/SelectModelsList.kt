@@ -25,6 +25,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,6 +43,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Calendar
+import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Trash
 import compose.icons.feathericons.Type
@@ -81,7 +85,9 @@ private fun PreviewSelectModelsList() {
         modelsList = dummyLLMModels.toImmutableList(),
         onModelListItemClick = {},
         onModelDeleteClick = {},
+        onModelUpdate = {},
         showModelDeleteIcon = false,
+        showModelEditIcon = false,
     )
 }
 
@@ -91,10 +97,13 @@ fun SelectModelsList(
     modelsList: ImmutableList<LLMModel>,
     onModelListItemClick: (LLMModel) -> Unit,
     onModelDeleteClick: (LLMModel) -> Unit,
+    onModelUpdate: (LLMModel) -> Unit = {},
     showModelDeleteIcon: Boolean = true,
+    showModelEditIcon: Boolean = false,
 ) {
     val context = LocalContext.current
     var sortOrder by remember { mutableStateOf(SortOrder.NAME) }
+    var editingModel by remember { mutableStateOf<LLMModel?>(null) }
     Surface {
         Dialog(onDismissRequest = onDismissRequest) {
             Column(
@@ -120,6 +129,16 @@ fun SelectModelsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
+                if (editingModel != null) {
+                    EditModelChatTemplate(
+                        model = editingModel!!,
+                        onCancel = { editingModel = null },
+                        onSave = { updatedModel ->
+                            onModelUpdate(updatedModel)
+                            editingModel = null
+                        },
+                    )
+                } else {
                 // Animate switching between different types of content
                 // See
                 // https://developer.android.com/develop/ui/compose/animation/quick-guide#switch-different
@@ -194,7 +213,9 @@ fun SelectModelsList(
                                 model = it,
                                 onModelListItemClick,
                                 onModelDeleteClick,
+                                onModelEditClick = { model -> editingModel = model },
                                 showModelDeleteIcon,
+                                showModelEditIcon,
                             )
                         }
                     } else {
@@ -203,7 +224,9 @@ fun SelectModelsList(
                                 model = it,
                                 onModelListItemClick,
                                 onModelDeleteClick,
+                                onModelEditClick = { model -> editingModel = model },
                                 showModelDeleteIcon,
+                                showModelEditIcon,
                             )
                         }
                     }
@@ -221,6 +244,50 @@ fun SelectModelsList(
                     Icon(FeatherIcons.Plus, contentDescription = "New Model")
                     Text(stringResource(R.string.chat_model_list_add_model))
                 }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EditModelChatTemplate(
+    model: LLMModel,
+    onCancel: () -> Unit,
+    onSave: (LLMModel) -> Unit,
+) {
+    var chatTemplate by remember(model.id) { mutableStateOf(model.chatTemplate) }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.chat_model_edit_template),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = stringResource(R.string.chat_model_template_desc),
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 120.dp, max = 240.dp),
+            value = chatTemplate,
+            onValueChange = { chatTemplate = it },
+            label = { Text(stringResource(R.string.chat_model_template_label)) },
+            maxLines = 10,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = onCancel) {
+                Text(stringResource(R.string.dialog_neg_cancel))
+            }
+            TextButton(onClick = { onSave(model.copy(chatTemplate = chatTemplate)) }) {
+                Text(stringResource(R.string.dialog_pos_save))
             }
         }
     }
@@ -231,7 +298,9 @@ private fun ModelListItem(
     model: LLMModel,
     onModelListItemClick: (LLMModel) -> Unit,
     onModelDeleteClick: (LLMModel) -> Unit,
+    onModelEditClick: (LLMModel) -> Unit,
     showModelDeleteIcon: Boolean,
+    showModelEditIcon: Boolean,
 ) {
     val context = LocalContext.current
     Row(
@@ -256,6 +325,15 @@ private fun ModelListItem(
                 maxLines = 1,
             )
             Spacer(modifier = Modifier.height(8.dp))
+        }
+        if (showModelEditIcon) {
+            IconButton(onClick = { onModelEditClick(model) }) {
+                Icon(
+                    FeatherIcons.Edit2,
+                    contentDescription = "Edit Chat Template",
+                    tint = MaterialTheme.colorScheme.secondary,
+                )
+            }
         }
         if (showModelDeleteIcon) {
             IconButton(

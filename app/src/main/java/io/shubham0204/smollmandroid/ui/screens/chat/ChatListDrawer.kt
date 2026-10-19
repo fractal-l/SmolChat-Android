@@ -71,6 +71,8 @@ import compose.icons.feathericons.List
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.PlusSquare
+import compose.icons.feathericons.Settings
+import compose.icons.feathericons.Users
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.Folder
@@ -82,7 +84,9 @@ import io.shubham0204.smollmandroid.ui.preview.dummyChats
 import io.shubham0204.smollmandroid.ui.preview.dummyFolders
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.createFolderOptionsDialog
 import io.shubham0204.smollmandroid.ui.screens.manage_asr.ManageASRActivity
+import io.shubham0204.smollmandroid.ui.screens.manage_characters.ManageCharactersActivity
 import io.shubham0204.smollmandroid.ui.screens.manage_tasks.ManageTasksActivity
+import io.shubham0204.smollmandroid.ui.screens.settings.SettingsActivity
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 
@@ -100,7 +104,9 @@ private fun PreviewChatsAndFoldersList() {
             onDeleteFolderWithChatsClick = {},
             onUpdateFolder = {},
             onAddFolder = {},
-            onManageASRClick = {}
+            onManageASRClick = {},
+            onManageCharactersClick = {},
+            onSettingsClick = {}
         )
     }
 }
@@ -172,6 +178,18 @@ fun DrawerUI(
                     }
                     onCloseDrawer()
                 },
+                onManageCharactersClick = {
+                    Intent(context, ManageCharactersActivity::class.java).also {
+                        context.startActivity(it)
+                    }
+                    onCloseDrawer()
+                },
+                onSettingsClick = {
+                    Intent(context, SettingsActivity::class.java).also {
+                        context.startActivity(it)
+                    }
+                    onCloseDrawer()
+                },
                 onItemClick = {
                     onEvent(ChatScreenUIEvent.ChatEvents.SwitchChat(it))
                     onCloseDrawer()
@@ -199,6 +217,8 @@ private fun ChatsAndFoldersList(
     folders: ImmutableList<Folder>,
     onManageTasksClick: () -> Unit,
     onManageASRClick: () -> Unit,
+    onManageCharactersClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onItemClick: (Chat) -> Unit,
     onDeleteFolderClick: (Folder) -> Unit,
     onDeleteFolderWithChatsClick: (Folder) -> Unit,
@@ -238,6 +258,44 @@ private fun ChatsAndFoldersList(
             )
             Text(
                 "Manage Speech-to-Text",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onManageCharactersClick() },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                FeatherIcons.Users,
+                contentDescription = "Manage Characters",
+                tint = MaterialTheme.colorScheme.secondary,
+            )
+            Text(
+                stringResource(R.string.chat_drawer_characters),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSettingsClick() },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                FeatherIcons.Settings,
+                contentDescription = "Settings",
+                tint = MaterialTheme.colorScheme.secondary,
+            )
+            Text(
+                stringResource(R.string.chat_drawer_settings),
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier
                     .fillMaxWidth()

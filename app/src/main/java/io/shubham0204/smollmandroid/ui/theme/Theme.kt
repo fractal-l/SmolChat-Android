@@ -16,6 +16,10 @@
 
 package io.shubham0204.smollmandroid.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -24,7 +28,16 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
+import io.shubham0204.smollmandroid.data.ThemeStore
+import org.koin.compose.koinInject
 
 private val lightScheme =
     lightColorScheme(
@@ -104,6 +117,19 @@ private val darkScheme =
         surfaceContainerHighest = surfaceContainerHighestDark,
     )
 
+private val amoledScheme =
+    darkScheme.copy(
+        background = backgroundAmoled,
+        surface = surfaceAmoled,
+        surfaceDim = surfaceDimAmoled,
+        surfaceBright = surfaceBrightAmoled,
+        surfaceContainerLowest = surfaceContainerLowestAmoled,
+        surfaceContainerLow = surfaceContainerLowAmoled,
+        surfaceContainer = surfaceContainerAmoled,
+        surfaceContainerHigh = surfaceContainerHighAmoled,
+        surfaceContainerHighest = surfaceContainerHighestAmoled,
+    )
+
 @Composable
 fun SmolLMAndroidTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -111,15 +137,51 @@ fun SmolLMAndroidTheme(
     dynamicColor: Boolean = false,
     content: @Composable() () -> Unit,
 ) {
+    // Previews do not start Koin, so fall back to the system theme there.
+    val isPreview = LocalInspectionMode.current
+    val themeMode =
+        if (isPreview) {
+            if (darkTheme) ThemeMode.DARK else ThemeMode.LIGHT
+        } else {
+            koinInject<ThemeStore>().themeMode.collectAsState().value
+        }
+    val isDark =
+        when (themeMode) {
+            ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK,
+            ThemeMode.AMOLED -> true
+        }
     val colorScheme =
         when {
             dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
                 val context = LocalContext.current
-                if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+                if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             }
 
-            darkTheme -> darkScheme
+            themeMode == ThemeMode.AMOLED -> amoledScheme
+            isDark -> darkScheme
             else -> lightScheme
         }
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !isDark
+                isAppearanceLightNavigationBars = !isDark
+            }
+            // Paint the area behind the system bars (left visible by safeDrawingPadding)
+            // with the current surface color instead of the activity's window background.
+            window.setBackgroundDrawable(ColorDrawable(colorScheme.surface.toArgb()))
+        }
+    }
     MaterialTheme(colorScheme = colorScheme, content = content, typography = AppTypography)
 }
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
