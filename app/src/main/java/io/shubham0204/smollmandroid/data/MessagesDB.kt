@@ -46,8 +46,14 @@ interface ChatMessageDao {
     @Query("SELECT * FROM ChatMessage WHERE chatId = :chatId")
     suspend fun getMessagesForModel(chatId: Long): List<ChatMessage>
 
+    @Query("SELECT * FROM ChatMessage")
+    suspend fun getAllMessages(): List<ChatMessage>
+
     @Insert
     suspend fun insertMessage(message: ChatMessage)
+
+    @Insert
+    suspend fun insertMessages(messages: List<ChatMessage>)
 
     @Query("DELETE FROM ChatMessage WHERE chatId = :chatId")
     suspend fun deleteMessages(chatId: Long)

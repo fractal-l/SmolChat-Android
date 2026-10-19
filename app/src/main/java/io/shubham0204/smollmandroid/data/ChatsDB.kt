@@ -113,6 +113,9 @@ interface ChatsDao {
     @Query("SELECT * FROM Chat ORDER BY dateUsed DESC")
     fun getChats(): Flow<List<Chat>>
 
+    @Query("SELECT * FROM Chat ORDER BY dateUsed DESC")
+    suspend fun getAllChats(): List<Chat>
+
     @Insert
     suspend fun insertChat(chat: Chat): Long
 

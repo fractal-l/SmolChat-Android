@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
@@ -194,5 +195,107 @@ class AppDB(context: Context) {
         runBlocking(Dispatchers.IO) {
             db.folderDao().deleteFolder(folderId)
             db.chatsDao().deleteChatsInFolder(folderId)
+        }
+
+    // Import / Export
+
+    /** Builds a portable archive of all chats (excluding tasks) and their messages. */
+    fun createChatArchive(): ChatArchive =
+        runBlocking(Dispatchers.IO) {
+            val folders = db.folderDao().getAllFolders()
+            val chats = db.chatsDao().getAllChats().filterNot { it.isTask }
+            val messagesByChat = db.chatMessagesDao().getAllMessages().groupBy { it.chatId }
+            ChatArchive(
+                exportedAt = System.currentTimeMillis(),
+                folders = folders.map { ArchivedFolder(id = it.id, name = it.name) },
+                chats =
+                    chats.map { chat ->
+                        ArchivedChat(
+                            name = chat.name,
+                            systemPrompt = chat.systemPrompt,
+                            dateCreated = chat.dateCreated.time,
+                            dateUsed = chat.dateUsed.time,
+                            minP = chat.minP,
+                            temperature = chat.temperature,
+                            nThreads = chat.nThreads,
+                            useMmap = chat.useMmap,
+                            useMlock = chat.useMlock,
+                            contextSize = chat.contextSize,
+                            chatTemplate = chat.chatTemplate,
+                            folderId = chat.folderId,
+                            messages =
+                                messagesByChat[chat.id].orEmpty().map {
+                                    ArchivedMessage(it.message, it.isUserMessage)
+                                },
+                        )
+                    },
+            )
+        }
+
+    /**
+     * Restores chats from an archive. Chats are appended (existing chats are kept) and folders are
+     * reused when a folder with the same name is already present. Model references are cleared so
+     * the user can pick a locally available model for each imported chat.
+     */
+    fun importChatArchive(archive: ChatArchive): ChatImportResult =
+        runBlocking(Dispatchers.IO) {
+            require(archive.version <= ChatArchive.CURRENT_VERSION) {
+                "Unsupported archive version ${archive.version}"
+            }
+            var chatCount = 0
+            var messageCount = 0
+            db.withTransaction {
+                val folderIdByName =
+                    db.folderDao()
+                        .getAllFolders()
+                        .associate { it.name to it.id }
+                        .toMutableMap()
+                val folderIdMap = mutableMapOf<Long, Long>()
+                for (archivedFolder in archive.folders) {
+                    val name = archivedFolder.name.ifBlank { "Imported folder" }
+                    val folderId =
+                        folderIdByName[name]
+                            ?: db.folderDao().insertFolder(Folder(name = name)).also {
+                                folderIdByName[name] = it
+                            }
+                    folderIdMap[archivedFolder.id] = folderId
+                }
+                for (archivedChat in archive.chats) {
+                    val newChatId =
+                        db.chatsDao()
+                            .insertChat(
+                                Chat(
+                                    name = archivedChat.name.ifBlank { "Imported chat" },
+                                    systemPrompt = archivedChat.systemPrompt,
+                                    dateCreated = Date(archivedChat.dateCreated.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                                    dateUsed = Date(archivedChat.dateUsed.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                                    llmModelId = -1L,
+                                    minP = archivedChat.minP,
+                                    temperature = archivedChat.temperature,
+                                    nThreads = archivedChat.nThreads,
+                                    useMmap = archivedChat.useMmap,
+                                    useMlock = archivedChat.useMlock,
+                                    contextSize = archivedChat.contextSize,
+                                    contextSizeConsumed = 0,
+                                    chatTemplate = archivedChat.chatTemplate,
+                                    folderId = folderIdMap[archivedChat.folderId] ?: -1L,
+                                )
+                            )
+                    val messages =
+                        archivedChat.messages.map {
+                            ChatMessage(
+                                chatId = newChatId,
+                                message = it.message,
+                                isUserMessage = it.isUserMessage,
+                            )
+                        }
+                    if (messages.isNotEmpty()) {
+                        db.chatMessagesDao().insertMessages(messages)
+                        messageCount += messages.size
+                    }
+                    chatCount++
+                }
+            }
+            ChatImportResult(chats = chatCount, messages = messageCount)
         }
 }

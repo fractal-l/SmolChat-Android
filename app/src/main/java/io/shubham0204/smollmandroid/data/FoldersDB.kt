@@ -32,13 +32,16 @@ data class Folder(@PrimaryKey(autoGenerate = true) var id: Long = 0, var name: S
 @Dao
 interface FolderDao {
     @Insert
-    suspend fun insertFolder(folder: Folder)
+    suspend fun insertFolder(folder: Folder): Long
 
     @Update
     suspend fun updateFolder(folder: Folder)
 
     @Query("SELECT * FROM Folder")
     fun getFolders(): Flow<List<Folder>>
+
+    @Query("SELECT * FROM Folder")
+    suspend fun getAllFolders(): List<Folder>
 
     @Query("DELETE FROM Folder WHERE id = :folderId")
     suspend fun deleteFolder(folderId: Long)
