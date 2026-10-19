@@ -30,9 +30,14 @@ class LLMInference {
     // newly rendered prompt is tokenized and only the suffix after the
     // longest common prefix is decoded.
     std::vector<llama_token> _kvTokens;
+    // Rendered prompt of the previous turn (before generation). Used to verify
+    // that the conversation prefix did not change since the last turn.
+    std::vector<llama_token> _lastPromptTokens;
     // True only after a turn completed cleanly. A cancelled or failed turn
     // leaves it false so the next turn rebuilds the context from scratch.
     bool                     _cacheValid = false;
+    // Whether the previous turn produced an empty response.
+    bool                     _lastResponseEmpty = true;
 
     struct RenderedPrompt {
         std::string text;
@@ -55,6 +60,9 @@ class LLMInference {
     bool _isValidUtf8(const char* response);
 
     RenderedPrompt _renderPrompt(bool addGenerationPrompt);
+
+    RenderedPrompt _renderPrompt(
+        const std::vector<common_chat_msg>& messages, bool addGenerationPrompt);
 
     void _resetContext();
 

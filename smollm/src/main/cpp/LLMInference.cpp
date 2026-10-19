@@ -60,7 +60,9 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
     _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
     _messages.clear();
     _kvTokens.clear();
+    _lastPromptTokens.clear();
     _cacheValid = false;
+    _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
     _batch = llama_batch{};
@@ -86,8 +88,14 @@ LLMInference::_renderPrompt(bool addGenerationPrompt) {
         common_chat_msg msg;
         msg.role    = message.role;
         msg.content = message.content;
-        messages.push_back(msg);
+        messages.push_back(std::move(msg));
     }
+    return _renderPrompt(messages, addGenerationPrompt);
+}
+
+LLMInference::RenderedPrompt
+LLMInference::_renderPrompt(
+    const std::vector<common_chat_msg>& messages, bool addGenerationPrompt) {
     auto templates = common_chat_templates_init(_model, _chatTemplate ? _chatTemplate : "");
 
     common_chat_templates_inputs inputs;
@@ -113,7 +121,9 @@ void
 LLMInference::_resetContext() {
     llama_memory_clear(llama_get_memory(_ctx), true);
     _kvTokens.clear();
+    _lastPromptTokens.clear();
     _cacheValid = false;
+    _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
 }
@@ -151,6 +161,82 @@ LLMInference::startCompletion(const char *query) {
     );
 
     const size_t kvSize = _kvTokens.size();
+
+    // Fast path: the previous turn ended cleanly and the conversation prefix
+    // (everything up to the assistant header) is unchanged. Keep the tokens
+    // the model actually generated in the KV cache and append only the
+    // template's assistant terminator plus the new user turn. This avoids
+    // re-prefilling the previous response when the template renders the
+    // assistant text differently (e.g. trims whitespace) from the sampled
+    // tokens.
+    if (_storeChats && _cacheValid && !_lastResponseEmpty &&
+        !_lastPromptTokens.empty() &&
+        _lastPromptTokens.size() <= promptTokens.size() &&
+        std::equal(_lastPromptTokens.begin(), _lastPromptTokens.end(),
+                   promptTokens.begin()) &&
+        _messages.size() >= 2 &&
+        strcmp(_messages[_messages.size() - 1].role, "user") == 0 &&
+        strcmp(_messages[_messages.size() - 2].role, "assistant") == 0) {
+        static const std::string kSentinel = "__SMOLCHAT_ASSISTANT_SENTINEL__";
+
+        std::vector<common_chat_msg> baseMessages;
+        baseMessages.reserve(_messages.size() - 1);
+        for (size_t i = 0; i + 1 < _messages.size(); i++) {
+            common_chat_msg msg;
+            msg.role    = _messages[i].role;
+            msg.content = _messages[i].content;
+            baseMessages.push_back(std::move(msg));
+        }
+        baseMessages.back().content = kSentinel;
+
+        RenderedPrompt prev = _renderPrompt(baseMessages, false);
+
+        std::vector<common_chat_msg> nextMessages = baseMessages;
+        common_chat_msg userMessage;
+        userMessage.role    = _messages.back().role;
+        userMessage.content = _messages.back().content;
+        nextMessages.push_back(std::move(userMessage));
+
+        RenderedPrompt next = _renderPrompt(nextMessages, true);
+
+        const size_t sentinelPos = prev.text.rfind(kSentinel);
+        const bool sentinelOk =
+            sentinelPos != std::string::npos &&
+            prev.text.find(kSentinel) == sentinelPos &&
+            prev.usedJinja == rendered.usedJinja &&
+            next.usedJinja == rendered.usedJinja &&
+            next.text.size() >= prev.text.size() &&
+            next.text.compare(0, prev.text.size(), prev.text) == 0;
+
+        if (sentinelOk) {
+            const std::string assistantEnd = prev.text.substr(sentinelPos + kSentinel.size());
+            const std::string userTurn     = next.text.substr(prev.text.size());
+            const std::string deltaText    = assistantEnd + userTurn;
+            std::vector<llama_token> deltaTokens = common_tokenize(
+                llama_model_get_vocab(_model),
+                deltaText,
+                /*add_special=*/false,
+                /*parse_special=*/true
+            );
+            if (!deltaTokens.empty()) {
+                _kvTokens.insert(_kvTokens.end(), deltaTokens.begin(), deltaTokens.end());
+                _promptTokens = deltaTokens;
+                _lastPromptTokens = promptTokens;
+                _cacheValid = false;
+
+                _batch = llama_batch{};
+                _batch.token = _promptTokens.data();
+                _batch.n_tokens = _promptTokens.size();
+
+                LOGi("startCompletion: suffix reuse, prompt=%zu kv=%zu decode=%zu, end=%zu user=%zu",
+                     promptTokens.size(), kvSize, _promptTokens.size(),
+                     assistantEnd.size(), userTurn.size());
+                return rendered.usedJinja;
+            }
+        }
+        LOGi("startCompletion: suffix reuse unavailable, using token prefix");
+    }
+
     size_t reuseLen = 0;
     if (_storeChats && _cacheValid) {
         const size_t n = std::min(kvSize, promptTokens.size());
@@ -175,6 +261,7 @@ LLMInference::startCompletion(const char *query) {
 
     // The KV cache already holds promptTokens[0, reuseLen).
     _kvTokens = promptTokens;
+    _lastPromptTokens = promptTokens;
     _promptTokens.assign(promptTokens.begin() + reuseLen, promptTokens.end());
 
     // A new user message always adds tokens, but guard against an empty batch
@@ -182,6 +269,7 @@ LLMInference::startCompletion(const char *query) {
     if (_promptTokens.empty() && !promptTokens.empty()) {
         _resetContext();
         _kvTokens = promptTokens;
+        _lastPromptTokens = promptTokens;
         _promptTokens = promptTokens;
     }
 
@@ -263,6 +351,7 @@ LLMInference::completionLoop() {
         addChatMessage(_response.c_str(), "assistant");
         // The KV cache now holds the prompt and every generated token, so the
         // next turn can reuse it as long as its prompt shares that prefix.
+        _lastResponseEmpty = _response.empty();
         if (_storeChats) {
             _cacheValid = true;
         }
