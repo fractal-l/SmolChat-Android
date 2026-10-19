@@ -244,10 +244,16 @@ LLMInference::completionLoop() {
         throw std::runtime_error("context size reached");
     }
 
+    const int n_batch_tokens = _batch.n_tokens;
     auto start = ggml_time_us();
     // run the model
     if (llama_decode(_ctx, _batch) < 0) {
         throw std::runtime_error("llama_decode() failed");
+    }
+    const auto decode_end = ggml_time_us();
+    if (n_batch_tokens > 1) {
+        LOGi("prompt decode: %d tokens in %.1f ms", n_batch_tokens,
+             (decode_end - start) / 1000.0);
     }
 
     // sample a token and check if it is an EOG (end of generation token)
