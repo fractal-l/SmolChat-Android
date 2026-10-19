@@ -200,9 +200,17 @@ LLMInference::startCompletion(const char *query) {
         RenderedPrompt next = _renderPrompt(nextMessages, true);
 
         const size_t sentinelPos = prev.text.rfind(kSentinel);
+        const bool jsonGlue = sentinelPos != std::string::npos &&
+            [&] {
+                const std::string tail = prev.text.substr(sentinelPos + kSentinel.size());
+                return tail.find('"') != std::string::npos ||
+                       tail.find('}') != std::string::npos ||
+                       tail.find(']') != std::string::npos;
+            }();
         const bool sentinelOk =
             sentinelPos != std::string::npos &&
             prev.text.find(kSentinel) == sentinelPos &&
+            !jsonGlue &&
             prev.usedJinja == rendered.usedJinja &&
             next.usedJinja == rendered.usedJinja &&
             next.text.size() >= prev.text.size() &&
