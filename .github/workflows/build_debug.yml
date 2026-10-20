@@ -21,6 +21,14 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Restore Gradle configuration cache
+        uses: actions/cache@v6
+        with:
+          path: .gradle/configuration-cache
+          key: gradle-config-${{ runner.os }}-${{ hashFiles('**/*.gradle', '**/*.gradle.kts', 'gradle/**', 'gradle.properties', 'settings.gradle.kts') }}
+          restore-keys: |
+            gradle-config-${{ runner.os }}-
+
       - name: Setup ccache
         uses: ./.github/actions/setup-ccache
 
@@ -42,7 +50,7 @@ jobs:
           RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
           RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleDebug --stacktrace --build-cache -PtargetAbi=arm64-v8a
+        run: ./gradlew :app:assembleDebug --stacktrace --build-cache --configuration-cache --configuration-cache-problems=warn -PtargetAbi=arm64-v8a
 
       - name: Verify APK signature
         run: |
