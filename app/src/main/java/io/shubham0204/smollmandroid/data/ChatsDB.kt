@@ -83,6 +83,8 @@ data class Chat(
     @ColumnInfo(defaultValue = "1.1") var repeatPenalty: Float = 1.1f,
     @ColumnInfo(defaultValue = "64") var repeatLastN: Int = 64,
     @ColumnInfo(defaultValue = "-1") var seed: Int = -1,
+    // Retained for database and archive compatibility. Inference uses the
+    // app-wide HardwareSettingsStore instead.
     var nThreads: Int = 4,
     var useMmap: Boolean = true,
     var useMlock: Boolean = false,
