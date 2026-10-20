@@ -76,9 +76,7 @@ sealed class ChatScreenUIEvent {
     sealed class ChatEvents {
         data class UpdateChatModel(val model: LLMModel) : ChatScreenUIEvent()
 
-        data class UpdateModelChatTemplate(val model: LLMModel) : ChatScreenUIEvent()
-
-        data class RenameModel(val model: LLMModel) : ChatScreenUIEvent()
+        data class UpdateModel(val model: LLMModel) : ChatScreenUIEvent()
 
         data object LoadChatModel : ChatScreenUIEvent()
 
@@ -387,26 +385,18 @@ class ChatScreenViewModel(
                 onEvent(ChatScreenUIEvent.DialogEvents.ToggleSelectModelListDialog(visible = false))
             }
 
-            is ChatScreenUIEvent.ChatEvents.UpdateModelChatTemplate -> {
-                modelsRepository.updateModel(event.model)
-                if (_uiState.value.chat.llmModelId == event.model.id) {
-                    unloadModel()
-                    loadModel()
-                }
-                Toast.makeText(
-                        context,
-                        context.getString(R.string.chat_model_template_saved),
-                        Toast.LENGTH_LONG,
-                    )
-                    .show()
-            }
+            is ChatScreenUIEvent.ChatEvents.UpdateModel -> {
+                val currentChat = _uiState.value.chat
+                val isCurrentModel = currentChat.llmModelId == event.model.id
+                val templateChanged =
+                    isCurrentModel &&
+                        currentChat.llmModel?.chatTemplate != event.model.chatTemplate
 
-            is ChatScreenUIEvent.ChatEvents.RenameModel -> {
                 modelsRepository.updateModel(event.model)
                 _uiState.update { state ->
                     state.copy(
                         chat =
-                            if (state.chat.llmModelId == event.model.id) {
+                            if (isCurrentModel) {
                                 state.chat.copy(llmModel = event.model)
                             } else {
                                 state.chat
@@ -423,9 +413,13 @@ class ChatScreenViewModel(
                                 .toImmutableList(),
                     )
                 }
+                if (templateChanged) {
+                    unloadModel()
+                    loadModel()
+                }
                 Toast.makeText(
                         context,
-                        context.getString(R.string.chat_model_rename_saved, event.model.name),
+                        context.getString(R.string.chat_model_saved, event.model.name),
                         Toast.LENGTH_LONG,
                     )
                     .show()

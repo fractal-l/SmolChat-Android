@@ -66,7 +66,6 @@ import androidx.compose.ui.window.Dialog
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Calendar
 import compose.icons.feathericons.Cpu
-import compose.icons.feathericons.Edit
 import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Trash
@@ -105,15 +104,12 @@ fun SelectModelsList(
     onModelListItemClick: (LLMModel) -> Unit,
     onModelDeleteClick: (LLMModel) -> Unit,
     onModelUpdate: (LLMModel) -> Unit = {},
-    onModelRename: (LLMModel) -> Unit = {},
     showModelDeleteIcon: Boolean = true,
     showModelEditIcon: Boolean = false,
-    showModelRenameIcon: Boolean = false,
 ) {
     val context = LocalContext.current
     var sortOrder by remember { mutableStateOf(SortOrder.NAME) }
     var editingModel by remember { mutableStateOf<LLMModel?>(null) }
-    var renamingModel by remember { mutableStateOf<LLMModel?>(null) }
     Dialog(onDismissRequest = onDismissRequest) {
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
@@ -142,17 +138,8 @@ fun SelectModelsList(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
 
-                if (renamingModel != null) {
-                    RenameModel(
-                        model = renamingModel!!,
-                        onCancel = { renamingModel = null },
-                        onSave = { updatedModel ->
-                            onModelRename(updatedModel)
-                            renamingModel = null
-                        },
-                    )
-                } else if (editingModel != null) {
-                    EditModelChatTemplate(
+                if (editingModel != null) {
+                    EditModel(
                         model = editingModel!!,
                         onCancel = { editingModel = null },
                         onSave = { updatedModel ->
@@ -236,10 +223,8 @@ fun SelectModelsList(
                                 onModelListItemClick,
                                 onModelDeleteClick,
                                 onModelEditClick = { model -> editingModel = model },
-                                onModelRenameClick = { model -> renamingModel = model },
                                 showModelDeleteIcon,
                                 showModelEditIcon,
-                                showModelRenameIcon,
                             )
                         }
                     } else {
@@ -249,10 +234,8 @@ fun SelectModelsList(
                                 onModelListItemClick,
                                 onModelDeleteClick,
                                 onModelEditClick = { model -> editingModel = model },
-                                onModelRenameClick = { model -> renamingModel = model },
                                 showModelDeleteIcon,
                                 showModelEditIcon,
-                                showModelRenameIcon,
                             )
                         }
                     }
@@ -285,18 +268,27 @@ fun SelectModelsList(
 }
 
 @Composable
-private fun EditModelChatTemplate(
+private fun EditModel(
     model: LLMModel,
     onCancel: () -> Unit,
     onSave: (LLMModel) -> Unit,
 ) {
+    var name by remember(model.id) { mutableStateOf(model.name) }
     var chatTemplate by remember(model.id) { mutableStateOf(model.chatTemplate) }
     Column(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = stringResource(R.string.chat_model_edit_template),
+            text = stringResource(R.string.chat_model_edit),
             style = MaterialTheme.typography.titleMedium,
         )
-        Spacer(modifier = Modifier.height(4.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        TextField(
+            modifier = Modifier.fillMaxWidth(),
+            value = name,
+            onValueChange = { name = it },
+            label = { Text(stringResource(R.string.chat_model_rename_label)) },
+            singleLine = true,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = stringResource(R.string.chat_model_template_desc),
             style = MaterialTheme.typography.labelSmall,
@@ -320,44 +312,16 @@ private fun EditModelChatTemplate(
             TextButton(onClick = onCancel) {
                 Text(stringResource(R.string.dialog_neg_cancel))
             }
-            TextButton(onClick = { onSave(model.copy(chatTemplate = chatTemplate)) }) {
-                Text(stringResource(R.string.dialog_pos_save))
-            }
-        }
-    }
-}
-
-@Composable
-private fun RenameModel(
-    model: LLMModel,
-    onCancel: () -> Unit,
-    onSave: (LLMModel) -> Unit,
-) {
-    var name by remember(model.id) { mutableStateOf(model.name) }
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = stringResource(R.string.chat_model_rename),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        TextField(
-            modifier = Modifier.fillMaxWidth(),
-            value = name,
-            onValueChange = { name = it },
-            label = { Text(stringResource(R.string.chat_model_rename_label)) },
-            singleLine = true,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(onClick = onCancel) {
-                Text(stringResource(R.string.dialog_neg_cancel))
-            }
             TextButton(
                 enabled = name.isNotBlank(),
-                onClick = { onSave(model.copy(name = name.trim())) },
+                onClick = {
+                    onSave(
+                        model.copy(
+                            name = name.trim(),
+                            chatTemplate = chatTemplate,
+                        )
+                    )
+                },
             ) {
                 Text(stringResource(R.string.dialog_pos_save))
             }
@@ -371,10 +335,8 @@ private fun ModelListItem(
     onModelListItemClick: (LLMModel) -> Unit,
     onModelDeleteClick: (LLMModel) -> Unit,
     onModelEditClick: (LLMModel) -> Unit,
-    onModelRenameClick: (LLMModel) -> Unit,
     showModelDeleteIcon: Boolean,
     showModelEditIcon: Boolean,
-    showModelRenameIcon: Boolean,
 ) {
     val context = LocalContext.current
     Card(
@@ -426,20 +388,11 @@ private fun ModelListItem(
                     maxLines = 1,
                 )
             }
-            if (showModelRenameIcon) {
-                IconButton(onClick = { onModelRenameClick(model) }) {
-                    Icon(
-                        FeatherIcons.Edit,
-                        contentDescription = "Rename Model",
-                        tint = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
             if (showModelEditIcon) {
                 IconButton(onClick = { onModelEditClick(model) }) {
                     Icon(
                         FeatherIcons.Edit2,
-                        contentDescription = "Edit Chat Template",
+                        contentDescription = stringResource(R.string.chat_model_edit),
                         tint = MaterialTheme.colorScheme.secondary,
                     )
                 }

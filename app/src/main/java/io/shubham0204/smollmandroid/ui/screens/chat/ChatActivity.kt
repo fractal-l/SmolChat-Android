@@ -379,13 +379,9 @@ fun ChatActivityScreenUI(
                         onEvent(ChatScreenUIEvent.ChatEvents.DeleteModel(model))
                     },
                     onModelUpdate = { model ->
-                        onEvent(ChatScreenUIEvent.ChatEvents.UpdateModelChatTemplate(model))
-                    },
-                    onModelRename = { model ->
-                        onEvent(ChatScreenUIEvent.ChatEvents.RenameModel(model))
+                        onEvent(ChatScreenUIEvent.ChatEvents.UpdateModel(model))
                     },
                     showModelEditIcon = true,
-                    showModelRenameIcon = true,
                 )
             }
             if (uiState.showTasksBottomSheet) {
