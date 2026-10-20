@@ -9,16 +9,24 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +55,8 @@ import compose.icons.feathericons.Check
 import compose.icons.feathericons.Download
 import compose.icons.feathericons.Play
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
+import io.shubham0204.smollmandroid.ui.components.PageIntro
+import io.shubham0204.smollmandroid.ui.components.SectionHeader
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
 import org.koin.androidx.compose.koinViewModel
 
@@ -68,6 +78,7 @@ class ManageASRActivity : ComponentActivity() {
         SmolLMAndroidTheme {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
+                containerColor = MaterialTheme.colorScheme.surface,
                 topBar = {
                     TopAppBar(
                         title = { AppBarTitleText("Manage Speech-to-Text") },
@@ -79,10 +90,13 @@ class ManageASRActivity : ComponentActivity() {
                     )
                 },
             ) { innerPadding ->
-                Column(modifier = Modifier
-                    .padding(innerPadding)
-                    .padding(16.dp)
-                    .fillMaxSize()) {
+                Column(
+                    modifier =
+                        Modifier
+                            .padding(innerPadding)
+                            .padding(horizontal = 16.dp)
+                            .fillMaxSize()
+                ) {
                     val launcher =
                         rememberLauncherForActivityResult(
                             ActivityResultContracts.RequestPermission()
@@ -98,50 +112,69 @@ class ManageASRActivity : ComponentActivity() {
                                     .show()
                             }
                         }
-                    Row(
+                    Spacer(modifier = Modifier.height(8.dp))
+                    PageIntro(
+                        text =
+                            "Turn spoken words into text in the chat composer. Everything runs locally on your device.",
+                        icon = Icons.Default.RecordVoiceOver,
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        shape = RoundedCornerShape(18.dp),
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                            ),
                     ) {
-                        Column {
-                            Text(
-                                "Speech to Text",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "Enable/disable speech-to-text globally",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray,
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Speech to text",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Enable or disable transcription globally.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Switch(
+                                checked = uiState.isEnabled,
+                                onCheckedChange = {
+                                    if (it) {
+                                        if (checkAudioRecordingPermission()) {
+                                            onEvent(ManageASRUIEvent.EnableSpeech2Text)
+                                        } else {
+                                            launcher.launch(Manifest.permission.RECORD_AUDIO)
+                                        }
+                                    } else {
+                                        onEvent(ManageASRUIEvent.DisableSpeech2Text)
+                                    }
+                                },
                             )
                         }
-                        Switch(
-                            checked = uiState.isEnabled,
-                            onCheckedChange = {
-                                if (it) {
-                                    if (checkAudioRecordingPermission()) {
-                                        onEvent(ManageASRUIEvent.EnableSpeech2Text)
-                                    } else {
-                                        launcher.launch(Manifest.permission.RECORD_AUDIO)
-                                    }
-                                } else {
-                                    onEvent(ManageASRUIEvent.DisableSpeech2Text)
-                                }
-                            },
-                        )
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Text(
-                        "Available Models",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
+                    Spacer(modifier = Modifier.height(20.dp))
+                    SectionHeader(
+                        title = "Available models",
+                        description = "Download one model to use on-device speech recognition.",
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
                         modifier = Modifier.weight(1f),
                     ) {
                         items(uiState.modelsList) { uiASRModel ->
@@ -161,41 +194,68 @@ class ManageASRActivity : ComponentActivity() {
     private fun ASRModelItem(asrModel: UIASRModel, onEvent: (ManageASRUIEvent) -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
             colors =
                 CardDefaults.cardColors(
                     containerColor =
                         if (asrModel.isEnabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant
+                        else MaterialTheme.colorScheme.surfaceContainerLow
                 ),
         ) {
             Row(
                 modifier = Modifier
-                    .padding(16.dp)
+                    .padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp)
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Column {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(42.dp)
+                            .background(
+                                if (asrModel.isEnabled) {
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                                } else {
+                                    MaterialTheme.colorScheme.secondaryContainer
+                                },
+                                RoundedCornerShape(14.dp),
+                            ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.RecordVoiceOver,
+                        contentDescription = null,
+                        tint =
+                            if (asrModel.isEnabled) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            },
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         asrModel.model.description,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
                     )
-                    if (asrModel.isDownloaded) {
-                        Text(
-                            if (asrModel.isEnabled) "Currently active" else "Downloaded",
-                            style = MaterialTheme.typography.labelSmall,
-                            color =
-                                if (asrModel.isEnabled) MaterialTheme.colorScheme.primary
-                                else Color.Gray,
-                        )
-                    } else {
-                        Text(
-                            "Not downloaded",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.Gray,
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        when {
+                            asrModel.isEnabled -> "Currently active"
+                            asrModel.isDownloaded -> "Downloaded"
+                            else -> "Not downloaded"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color =
+                            if (asrModel.isEnabled) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    )
                 }
 
                 if (asrModel.isDownloaded) {
@@ -204,6 +264,7 @@ class ManageASRActivity : ComponentActivity() {
                             FeatherIcons.Check,
                             contentDescription = "Active",
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp),
                         )
                     } else {
                         IconButton(
@@ -230,19 +291,46 @@ class ManageASRActivity : ComponentActivity() {
     @Composable
     private fun DownloadProgressDialog(progress: Int) {
         Dialog(onDismissRequest = {}) {
-            Card(shape = MaterialTheme.shapes.medium) {
+            Card(
+                shape = MaterialTheme.shapes.extraLarge,
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ),
+            ) {
                 Column(
                     modifier = Modifier.padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Downloading Model...", style = MaterialTheme.typography.titleMedium)
+                    Icon(
+                        imageVector = FeatherIcons.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp),
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "Downloading model",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        "Keep the app open while the model is saved.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
                     LinearProgressIndicator(
                         progress = { progress / 100f },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("$progress%", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "$progress%",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
         }

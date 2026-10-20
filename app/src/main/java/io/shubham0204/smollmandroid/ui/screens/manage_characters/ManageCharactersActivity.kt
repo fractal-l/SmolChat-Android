@@ -23,6 +23,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,7 +37,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +49,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -58,6 +62,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,11 +75,15 @@ import compose.icons.feathericons.Edit2
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.Trash
 import compose.icons.feathericons.User
+import compose.icons.feathericons.Users
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.CharacterPreset
 import io.shubham0204.smollmandroid.data.CharacterPresetsStore
 import io.shubham0204.smollmandroid.ui.components.AppAlertDialog
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
+import io.shubham0204.smollmandroid.ui.components.EmptyState
+import io.shubham0204.smollmandroid.ui.components.PageIntro
+import io.shubham0204.smollmandroid.ui.components.SectionHeader
 import io.shubham0204.smollmandroid.ui.components.createAlertDialog
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
 import org.koin.compose.koinInject
@@ -160,25 +169,40 @@ private fun CharactersScreenUI(
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(paddingValues)
+                        .padding(horizontal = 16.dp)
             ) {
-                Text(
+                Spacer(modifier = Modifier.height(8.dp))
+                PageIntro(
                     text = stringResource(R.string.characters_desc),
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(16.dp),
+                    icon = FeatherIcons.Users,
                 )
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionHeader(
+                    title = "Your characters",
+                    description =
+                        if (presets.isEmpty()) {
+                            "Add a character to reuse a prompt and sampler settings."
+                        } else {
+                            "${presets.size} character${if (presets.size == 1) "" else "s"} available."
+                        },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
                 if (presets.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.characters_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        textAlign = TextAlign.Center,
+                    EmptyState(
+                        icon = FeatherIcons.User,
+                        title = stringResource(R.string.characters_empty),
+                        description =
+                            "Characters bundle a system prompt with temperature and min-p settings.",
+                        actionLabel = stringResource(R.string.characters_add),
+                        onAction = {
+                            editingPreset = null
+                            showEditor = true
+                        },
                     )
                 } else {
                     LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp),
                     ) {
                         items(presets, key = { it.id }) { preset ->
                             val deleteTitle = stringResource(R.string.characters_delete_title)
@@ -237,39 +261,56 @@ private fun CharacterItem(
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors =
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            ),
+    ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(start = 14.dp, top = 14.dp, bottom = 14.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 FeatherIcons.User,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier =
+                    Modifier
+                        .size(42.dp)
+                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp))
+                        .padding(11.dp),
             )
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp)
-            ) {
-                Text(text = preset.name, style = MaterialTheme.typography.titleSmall)
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = preset.name,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 if (preset.systemPrompt.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(3.dp))
                     Text(
                         text = preset.systemPrompt,
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text =
-                        "temp %.2f · min-p %.2f".format(
+                        "temp %.2f  ·  min-p %.2f".format(
                             preset.temperature,
                             preset.minP,
                         ),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
             IconButton(onClick = onEditClick) {
@@ -294,30 +335,44 @@ private fun CharacterPresetDialog(
         mutableFloatStateOf(initialPreset?.temperature ?: 0.8f)
     }
     var minP by remember { mutableFloatStateOf(initialPreset?.minP ?: 0.1f) }
-    Surface {
-        Dialog(onDismissRequest = onDismiss) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+        ) {
             Column(
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .verticalScroll(rememberScrollState())
-                        .background(
-                            MaterialTheme.colorScheme.surfaceContainer,
-                            RoundedCornerShape(8.dp),
-                        )
-                        .padding(16.dp)
+                        .padding(24.dp)
             ) {
-                Text(
-                    text =
-                        stringResource(
-                            if (initialPreset == null) R.string.characters_add
-                            else R.string.characters_edit
-                        ),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = FeatherIcons.User,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier =
+                            Modifier
+                                .size(40.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .padding(10.dp),
+                    )
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Text(
+                        text =
+                            stringResource(
+                                if (initialPreset == null) R.string.characters_add
+                                else R.string.characters_edit
+                            ),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
                 TextField(
                     modifier = Modifier.fillMaxWidth(),
                     value = name,
@@ -327,8 +382,9 @@ private fun CharacterPresetDialog(
                         KeyboardOptions.Default.copy(
                             capitalization = KeyboardCapitalization.Words
                         ),
+                    singleLine = true,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 TextField(
                     modifier = Modifier.fillMaxWidth(),
                     value = systemPrompt,
@@ -338,12 +394,13 @@ private fun CharacterPresetDialog(
                         KeyboardOptions.Default.copy(
                             capitalization = KeyboardCapitalization.Sentences
                         ),
+                    minLines = 3,
                     maxLines = 6,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 Text(
                     text = stringResource(R.string.characters_temperature),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.titleSmall,
                 )
                 Slider(
                     value = temperature,
@@ -352,12 +409,13 @@ private fun CharacterPresetDialog(
                 )
                 Text(
                     text = "%.2f".format(temperature),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = stringResource(R.string.characters_min_p),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.titleSmall,
                 )
                 Slider(
                     value = minP,
@@ -366,25 +424,35 @@ private fun CharacterPresetDialog(
                 )
                 Text(
                     text = "%.2f".format(minP),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                OutlinedButton(
-                    enabled = name.isNotBlank(),
-                    onClick = {
-                        onSave(
-                            CharacterPreset(
-                                id = initialPreset?.id ?: 0L,
-                                name = name.trim(),
-                                systemPrompt = systemPrompt,
-                                temperature = temperature,
-                                minP = minP,
-                            )
-                        )
-                    },
-                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Text(stringResource(R.string.characters_save))
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.dialog_neg_cancel))
+                    }
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Button(
+                        enabled = name.isNotBlank(),
+                        onClick = {
+                            onSave(
+                                CharacterPreset(
+                                    id = initialPreset?.id ?: 0L,
+                                    name = name.trim(),
+                                    systemPrompt = systemPrompt,
+                                    temperature = temperature,
+                                    minP = minP,
+                                )
+                            )
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(stringResource(R.string.characters_save))
+                    }
                 }
             }
         }

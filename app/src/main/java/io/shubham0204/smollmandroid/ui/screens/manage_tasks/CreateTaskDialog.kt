@@ -17,21 +17,26 @@
 package io.shubham0204.smollmandroid.ui.screens.manage_tasks
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -43,17 +48,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.FocusRequester.Companion.FocusRequesterFactory.component1
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.Plus
+import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.Cpu
+import compose.icons.feathericons.List
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.LLMModel
 import io.shubham0204.smollmandroid.ui.components.SelectModelsList
@@ -78,28 +85,43 @@ fun CreateTaskDialog(
     var isModelListDialogVisible by remember { mutableStateOf(false) }
     val (focusRequestor) = FocusRequester.createRefs()
     val keyboardController = LocalSoftwareKeyboardController.current
-    Surface {
-        Dialog(onDismissRequest = onDismiss) {
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+        ) {
             Column(
                 modifier =
                     Modifier
-                        .padding(8.dp)
                         .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                        .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.task_create_task_title),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = FeatherIcons.List,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier =
+                            Modifier
+                                .size(40.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.primaryContainer,
+                                    RoundedCornerShape(12.dp),
+                                )
+                                .padding(10.dp),
+                    )
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Text(
+                        text = stringResource(R.string.task_create_task_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                Spacer(modifier = Modifier.height(20.dp))
                 TextField(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     value = taskName,
                     onValueChange = { taskName = it },
                     label = { Text(stringResource(R.string.task_create_task_name)) },
@@ -109,13 +131,14 @@ fun CreateTaskDialog(
                             imeAction = ImeAction.Next,
                         ),
                     keyboardActions = KeyboardActions(onNext = { focusRequestor.requestFocus() }),
+                    singleLine = true,
                 )
 
+                Spacer(modifier = Modifier.height(12.dp))
                 TextField(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 16.dp)
                             .focusRequester(focusRequestor),
                     value = systemPrompt,
                     onValueChange = { systemPrompt = it },
@@ -126,20 +149,29 @@ fun CreateTaskDialog(
                             imeAction = ImeAction.Done,
                         ),
                     keyboardActions = KeyboardActions(onDone = { keyboardController?.hide() }),
+                    minLines = 3,
+                    maxLines = 6,
                 )
 
-                Text(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .border(width = 1.dp, Color.DarkGray)
-                            .clickable { isModelListDialogVisible = true }
-                            .padding(8.dp),
-                    text =
-                        if (selectedModel == null)
-                            stringResource(R.string.task_create_task_select_model)
-                        else selectedModel!!.name,
-                )
+                Spacer(modifier = Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = { isModelListDialogVisible = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Icon(FeatherIcons.Cpu, contentDescription = null)
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text(
+                        text =
+                            selectedModel?.name
+                                ?: stringResource(R.string.task_create_task_select_model),
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(FeatherIcons.ChevronDown, contentDescription = null)
+                }
 
                 if (isModelListDialogVisible) {
                     SelectModelsList(
@@ -156,18 +188,28 @@ fun CreateTaskDialog(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedButton(
-                    enabled =
-                        taskName.isNotBlank() && systemPrompt.isNotBlank() && selectedModel != null,
-                    onClick = {
-                        onAddTask(taskName, systemPrompt, selectedModel?.id ?: -1L)
-                        onDismiss()
-                    },
+                Spacer(modifier = Modifier.height(24.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
                 ) {
-                    Icon(FeatherIcons.Plus, contentDescription = "Add")
-                    Text(stringResource(R.string.task_create_task_add))
+                    TextButton(onClick = onDismiss) {
+                        Text(stringResource(R.string.dialog_neg_cancel))
+                    }
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Button(
+                        enabled =
+                            taskName.isNotBlank() &&
+                                systemPrompt.isNotBlank() &&
+                                selectedModel != null,
+                        onClick = {
+                            onAddTask(taskName, systemPrompt, selectedModel?.id ?: -1L)
+                            onDismiss()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                    ) {
+                        Text(stringResource(R.string.task_create_task_add))
+                    }
                 }
             }
         }

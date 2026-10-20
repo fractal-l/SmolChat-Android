@@ -1,12 +1,16 @@
 package io.shubham0204.smollmandroid.ui.screens.model_download
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +37,7 @@ import compose.icons.feathericons.Download
 import compose.icons.feathericons.Globe
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.ui.components.AppSpacer4W
+import io.shubham0204.smollmandroid.ui.components.SectionHeader
 
 @Preview
 @Composable
@@ -54,20 +59,39 @@ fun DownloadModelScreen(
     var selectedPopularModelIndex by rememberSaveable { mutableStateOf<Int?>(null) }
     Column(
         modifier = modifier.padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
         Column {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(50),
+            ) {
+                Text(
+                    text = "STEP 1 OF 2",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.download_model_step_title),
                 style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 stringResource(R.string.download_model_step_des),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+
+        SectionHeader(
+            title = "Popular models",
+            description = "A quick start with models that work well on phones.",
+        )
 
         PopularModelsList(
             selectedModelIndex = selectedPopularModelIndex,
@@ -78,7 +102,7 @@ fun DownloadModelScreen(
             modifier = Modifier.fillMaxWidth(),
             enabled = selectedPopularModelIndex != null,
             onClick = { onDownloadModelClick(selectedPopularModelIndex!!) },
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(14.dp),
         ) {
             Icon(FeatherIcons.Download, contentDescription = null)
             AppSpacer4W()
@@ -88,7 +112,7 @@ fun DownloadModelScreen(
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             HorizontalDivider(modifier = Modifier.weight(1f))
             Text(
@@ -99,28 +123,63 @@ fun DownloadModelScreen(
             HorizontalDivider(modifier = Modifier.weight(1f))
         }
 
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = stringResource(R.string.download_model_step_hf_browse),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = onHFModelSelectClick,
-                shape = RoundedCornerShape(12.dp)
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Icon(FeatherIcons.Globe, contentDescription = null)
-                AppSpacer4W()
-                Text(stringResource(R.string.download_model_browse_hf))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(42.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.secondaryContainer,
+                                    CircleShape,
+                                ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            FeatherIcons.Globe,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.size(14.dp))
+                    Column {
+                        Text(
+                            text = stringResource(R.string.download_model_browse_hf),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = stringResource(R.string.download_model_step_hf_browse),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onHFModelSelectClick,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(FeatherIcons.Globe, contentDescription = null)
+                    AppSpacer4W()
+                    Text(stringResource(R.string.download_model_browse_hf))
+                }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
         Surface(
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
-            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(18.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(
@@ -131,6 +190,7 @@ fun DownloadModelScreen(
                 Text(
                     text = stringResource(R.string.download_model_next_step_des),
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
                     textAlign = TextAlign.Center
                 )
                 Button(

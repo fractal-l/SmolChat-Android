@@ -49,12 +49,16 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
+import compose.icons.feathericons.List
 import compose.icons.feathericons.Plus
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.LLMModel
 import io.shubham0204.smollmandroid.data.Task
 import io.shubham0204.smollmandroid.ui.components.AppAlertDialog
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
+import io.shubham0204.smollmandroid.ui.components.EmptyState
+import io.shubham0204.smollmandroid.ui.components.PageIntro
+import io.shubham0204.smollmandroid.ui.components.SectionHeader
 import io.shubham0204.smollmandroid.ui.components.TasksList
 import io.shubham0204.smollmandroid.ui.components.createAlertDialog
 import io.shubham0204.smollmandroid.ui.preview.dummyLLMModels
@@ -119,6 +123,7 @@ private fun TasksActivityScreenUI(
     val context = LocalContext.current
     SmolLMAndroidTheme {
         Scaffold(
+            containerColor = MaterialTheme.colorScheme.surface,
             topBar = {
                 TopAppBar(
                     title = {
@@ -143,62 +148,85 @@ private fun TasksActivityScreenUI(
                         .background(MaterialTheme.colorScheme.surface)
                         .fillMaxSize()
                         .padding(paddingValues)
+                        .padding(horizontal = 16.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.tasks_manage_tasks_desc),
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(16.dp),
-                )
                 Spacer(modifier = Modifier.height(8.dp))
-                TasksList(
-                    tasks,
-                    onTaskSelected = { /* Not applicable as enableTaskClick is set to `false` */ },
-                    onUpdateTaskClick = { task -> onUpdateTask(task) },
-                    onEditTaskClick = { task ->
-                        selectedTask = task
-                        showEditTaskDialog = true
-                    },
-                    onDeleteTaskClick = { task ->
-                        createAlertDialog(
-                            dialogTitle = context.getString(R.string.dialog_delete_task_title),
-                            dialogText = "Are you sure you want to delete task '${task.name}'?",
-                            dialogPositiveButtonText =
-                                context.getString(R.string.dialog_pos_delete),
-                            dialogNegativeButtonText =
-                                context.getString(R.string.dialog_neg_cancel),
-                            onPositiveButtonClick = {
-                                onDeleteTask(task.id)
-                                Toast.makeText(
-                                        context,
-                                        "Task '${task.name}' deleted",
-                                        Toast.LENGTH_LONG,
-                                )
-                                    .show()
-                            },
-                            onNegativeButtonClick = {},
-                        )
-                    },
-                    enableTaskClick = false,
-                    showTaskOptions = true,
+                PageIntro(
+                    text = stringResource(R.string.tasks_manage_tasks_desc),
+                    icon = FeatherIcons.List,
                 )
-                if (showCreateTaskDialog) {
-                    CreateTaskDialog(
-                        availableModelsList = availableModelsList,
-                        onDismiss = { showCreateTaskDialog = false },
-                        onAddTask = onAddTask,
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionHeader(
+                    title = "Your tasks",
+                    description =
+                        if (tasks.isEmpty()) {
+                            "Create a task to reuse a prompt and model."
+                        } else {
+                            "${tasks.size} task${if (tasks.size == 1) "" else "s"} ready to use."
+                        },
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                if (tasks.isEmpty()) {
+                    EmptyState(
+                        icon = FeatherIcons.List,
+                        title = "No tasks yet",
+                        description =
+                            "Tasks are reusable chat templates with their own system prompt and model.",
+                        actionLabel = "Create task",
+                        onAction = { showCreateTaskDialog = true },
+                    )
+                } else {
+                    TasksList(
+                        tasks,
+                        onTaskSelected = { /* Not applicable as enableTaskClick is set to `false` */ },
+                        onUpdateTaskClick = { task -> onUpdateTask(task) },
+                        onEditTaskClick = { task ->
+                            selectedTask = task
+                            showEditTaskDialog = true
+                        },
+                        onDeleteTaskClick = { task ->
+                            createAlertDialog(
+                                dialogTitle = context.getString(R.string.dialog_delete_task_title),
+                                dialogText = "Are you sure you want to delete task '${task.name}'?",
+                                dialogPositiveButtonText =
+                                    context.getString(R.string.dialog_pos_delete),
+                                dialogNegativeButtonText =
+                                    context.getString(R.string.dialog_neg_cancel),
+                                onPositiveButtonClick = {
+                                    onDeleteTask(task.id)
+                                    Toast.makeText(
+                                            context,
+                                            "Task '${task.name}' deleted",
+                                            Toast.LENGTH_LONG,
+                                    )
+                                        .show()
+                                },
+                                onNegativeButtonClick = {},
+                            )
+                        },
+                        enableTaskClick = false,
+                        showTaskOptions = true,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
-                if (showEditTaskDialog && selectedTask != null) {
-                    EditTaskDialog(
-                        selectedTask = selectedTask!!,
-                        selectedTaskModel = getModelFromId(selectedTask!!.modelId),
-                        availableModelsList = availableModelsList,
-                        onDismiss = { showEditTaskDialog = false },
-                        onUpdateTask = onUpdateTask,
-                    )
-                }
-                AppAlertDialog()
             }
+            if (showCreateTaskDialog) {
+                CreateTaskDialog(
+                    availableModelsList = availableModelsList,
+                    onDismiss = { showCreateTaskDialog = false },
+                    onAddTask = onAddTask,
+                )
+            }
+            if (showEditTaskDialog && selectedTask != null) {
+                EditTaskDialog(
+                    selectedTask = selectedTask!!,
+                    selectedTaskModel = getModelFromId(selectedTask!!.modelId),
+                    availableModelsList = availableModelsList,
+                    onDismiss = { showEditTaskDialog = false },
+                    onUpdateTask = onUpdateTask,
+                )
+            }
+            AppAlertDialog()
         }
     }
 }

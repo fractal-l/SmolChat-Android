@@ -54,9 +54,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
@@ -72,6 +72,7 @@ import io.shubham0204.hf_model_hub_api.HFModelTree
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.ui.components.AppAlertDialog
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
+import io.shubham0204.smollmandroid.ui.components.SectionHeader
 import io.shubham0204.smollmandroid.ui.components.createAlertDialog
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
 import java.time.LocalDateTime
@@ -116,6 +117,7 @@ fun ViewHFModelScreen(
     SmolLMAndroidTheme {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.surface,
             topBar = {
                 TopAppBar(
                     title = {
@@ -158,59 +160,50 @@ fun ViewHFModelScreen(
                 )
             },
         ) { innerPadding ->
-            Column(
+            LazyColumn(
                 modifier =
                     Modifier
                         .fillMaxSize()
                         .background(MaterialTheme.colorScheme.surface)
-                        .padding(innerPadding)
+                        .padding(innerPadding),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                ModelInfoCard(modelInfo)
-
-                Text(
-                    text = "GGUF Files",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
-
-                GGUFModelsList(
-                    modelFileTree,
-                    onModelClick = { modelFile ->
-                        createAlertDialog(
-                            dialogTitle = "Download Model",
-                            dialogText =
-                                "The model will start downloading and will be stored in the Downloads " +
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    ModelInfoCard(modelInfo)
+                }
+                item {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    SectionHeader(
+                        title = "GGUF files",
+                        description = "Pick a quantization to download. Smaller files use less memory.",
+                    )
+                }
+                items(modelFileTree) { modelFile ->
+                    GGUFModelListItem(
+                        modelFile = modelFile,
+                        onModelFileClick = { file ->
+                            createAlertDialog(
+                                dialogTitle = "Download Model",
+                                dialogText =
+                                    "The model will start downloading and will be stored in the Downloads " +
                                         "folder. Select the model file from the file explorer to load it in the app.",
-                            dialogPositiveButtonText = "Download",
-                            onPositiveButtonClick = {
-                                onDownloadModel(
-                                    "https://huggingface.co/${modelInfo.modelId}/resolve/main/${modelFile.path}"
-                                )
-                                onBackClicked()
-                            },
-                            dialogNegativeButtonText = "Cancel",
-                            onNegativeButtonClick = {},
-                        )
-                    },
-                )
+                                dialogPositiveButtonText = "Download",
+                                onPositiveButtonClick = {
+                                    onDownloadModel(
+                                        "https://huggingface.co/${modelInfo.modelId}/resolve/main/${file.path}"
+                                    )
+                                    onBackClicked()
+                                },
+                                dialogNegativeButtonText = "Cancel",
+                                onNegativeButtonClick = {},
+                            )
+                        },
+                    )
+                }
             }
             AppAlertDialog()
-        }
-    }
-}
-
-@Composable
-private fun GGUFModelsList(
-    modelFiles: List<HFModelTree.HFModelFile>,
-    onModelClick: (HFModelTree.HFModelFile) -> Unit,
-) {
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(modelFiles) { modelFile ->
-            GGUFModelListItem(modelFile, onModelClick)
         }
     }
 }
@@ -225,34 +218,37 @@ private fun GGUFModelListItem(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onModelFileClick(modelFile) },
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         )
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(start = 14.dp, top = 12.dp, bottom = 12.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
                 modifier = Modifier.size(40.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer
             ) {
                 Icon(
                     FeatherIcons.File,
                     contentDescription = null,
                     modifier = Modifier.padding(10.dp),
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = modelFile.path,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text =
                         if (fileSizeGB < 1) {
@@ -279,12 +275,12 @@ private fun GGUFModelListItem(
 private fun ModelInfoCard(modelInfo: HFModelInfo.ModelInfo) {
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f)
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
         ),
-        modifier = Modifier.padding(16.dp),
-        shape = RoundedCornerShape(16.dp)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(20.dp)) {
             val parts = modelInfo.modelId.split("/")
             val modelAuthor = if (parts.size > 1) parts[0] else "Hugging Face"
             val modelName = if (parts.size > 1) parts[1] else parts[0]
@@ -304,13 +300,13 @@ private fun ModelInfoCard(modelInfo: HFModelInfo.ModelInfo) {
                     fontWeight = FontWeight.Bold
                 )
             }
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = modelName,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -342,22 +338,21 @@ private fun ModelInfoCard(modelInfo: HFModelInfo.ModelInfo) {
             }
 
             if (modelInfo.tags.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     modelInfo.tags.filter { !listOf("GGUF", "conversational").contains(it) }.take(8)
                         .forEach { tag ->
                             Surface(
                                 color = MaterialTheme.colorScheme.secondaryContainer,
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                                     text = tag,
                                     style = MaterialTheme.typography.labelSmall,
-                                    fontSize = 10.sp,
                                     color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                             }
@@ -378,7 +373,7 @@ private fun ModelInfoIconBubble(icon: ImageVector, contentDescription: String, t
                     MaterialTheme.colorScheme.surface,
                     RoundedCornerShape(8.dp),
                 )
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(horizontal = 9.dp, vertical = 5.dp),
     ) {
         Icon(
             modifier = Modifier.size(14.dp),
