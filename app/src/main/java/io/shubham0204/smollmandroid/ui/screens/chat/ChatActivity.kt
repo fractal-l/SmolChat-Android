@@ -55,7 +55,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -203,10 +205,10 @@ class ChatActivity : ComponentActivity() {
                         viewModel.uiState.collectAsStateWithLifecycle(
                             LocalLifecycleOwner.current
                         )
-                        val renderedPartialResponse by
-                        viewModel.renderedPartialResponse.collectAsStateWithLifecycle(
-                            LocalLifecycleOwner.current
-                        )
+                        val renderedPartialResponse =
+                            viewModel.renderedPartialResponse.collectAsStateWithLifecycle(
+                                LocalLifecycleOwner.current
+                            )
                         val defaultQuestion = remember { viewModel.consumeQuestionTextDefaultVal() }
                         ChatActivityScreenUI(
                             uiState,
@@ -270,7 +272,7 @@ private fun PreviewChatActivityScreenUI() {
 @Composable
 fun ChatActivityScreenUI(
     uiState: ChatScreenUIState,
-    renderedPartialResponse: Spanned? = null,
+    renderedPartialResponse: State<Spanned?> = mutableStateOf<Spanned?>(null),
     defaultQuestion: String? = null,
     onEditChatParamsClick: (Chat, Int) -> Unit,
     onBenchmarkModelClick: () -> Unit,
@@ -425,7 +427,7 @@ fun ChatActivityScreenUI(
 @Composable
 private fun ColumnScope.ScreenUI(
     uiState: ChatScreenUIState,
-    renderedPartialResponse: Spanned?,
+    renderedPartialResponse: State<Spanned?>,
     defaultQuestion: String?,
     onEvent: (ChatScreenUIEvent) -> Unit,
 ) {
@@ -438,7 +440,7 @@ private fun ColumnScope.ScreenUI(
     MessagesList(
         messages = uiState.messages,
         isGeneratingResponse = uiState.isGeneratingResponse,
-        renderedPartialResponse = renderedPartialResponse,
+        renderedPartialResponse = renderedPartialResponse.value,
         chatId = uiState.chat.id,
         assistantName = assistantName,
         responseGenerationsSpeed = uiState.responseGenerationsSpeed,
