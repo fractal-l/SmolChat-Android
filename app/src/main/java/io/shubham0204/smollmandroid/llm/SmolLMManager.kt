@@ -16,6 +16,7 @@
 
 package io.shubham0204.smollmandroid.llm
 
+import android.content.Context
 import android.util.Log
 import io.shubham0204.smollm.SmolLM
 import io.shubham0204.smollmandroid.data.AppDB
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.Single
+import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -40,7 +42,7 @@ private const val LOGTAG = "[SmolLMManager-Kt]"
 private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
 
 @Single
-class SmolLMManager(private val appDB: AppDB) {
+class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     private val instance = SmolLM()
 
     // Use ReentrantLock for thread-safe state management without suspending
@@ -57,6 +59,9 @@ class SmolLMManager(private val appDB: AppDB) {
 
     @Volatile
     private var chat: Chat? = null
+
+    @Volatile
+    private var cachePath: String? = null
 
     // Use java.util.concurrent.atomic for better thread safety
     val isInstanceLoaded = AtomicBoolean(false)
@@ -80,18 +85,20 @@ class SmolLMManager(private val appDB: AppDB) {
         onError: (Exception) -> Unit,
         onSuccess: () -> Unit,
     ) {
+        val newCachePath = if (chat.isTask) null else cacheFileFor(chat, modelPath, params)
         stateLock.withLock {
             // Cancel any in-flight generation/load before replacing the native model
             val previousLoadJob = modelInitJob
             val previousResponseJob = responseGenerationJob
             val previousResetJob = resetChatJob
+            val previousChat = this.chat
+            val previousCachePath = cachePath
             previousLoadJob?.cancel()
             previousResponseJob?.cancel()
             previousResetJob?.cancel()
             isInstanceLoaded.set(false)
 
             try {
-                this.chat = chat
                 modelInitJob = CoroutineScope(Dispatchers.Default).launch {
                     try {
                         // Wait for the cancelled jobs so the native instance is
@@ -99,12 +106,22 @@ class SmolLMManager(private val appDB: AppDB) {
                         previousResponseJob?.join()
                         previousLoadJob?.join()
                         previousResetJob?.join()
+                        if (previousChat != null &&
+                            !previousChat.isTask &&
+                            previousCachePath != null
+                        ) {
+                            if (instance.saveCache(previousCachePath)) {
+                                LOGD("Previous KV cache saved")
+                            }
+                        }
                         // Release the previous model. Without this the native
                         // pointer is overwritten on every chat/model switch and
                         // the old model's memory is leaked.
                         instance.close()
                         isInstanceLoaded.set(false)
                         instance.load(modelPath, params)
+                        this@SmolLMManager.chat = chat
+                        this@SmolLMManager.cachePath = newCachePath?.absolutePath
                         LOGD("Model loaded")
 
                         if (chat.systemPrompt.isNotEmpty()) {
@@ -122,6 +139,15 @@ class SmolLMManager(private val appDB: AppDB) {
                                     LOGD("Assistant message added: ${message.message}")
                                 }
                             }
+                            val restored =
+                                newCachePath?.let { instance.restoreCache(it.absolutePath) } ?: false
+                            LOGD(
+                                if (restored) {
+                                    "KV cache restored"
+                                } else {
+                                    "No compatible KV cache, starting fresh"
+                                }
+                            )
                         }
 
                         withContext(Dispatchers.Main) {
@@ -142,6 +168,26 @@ class SmolLMManager(private val appDB: AppDB) {
                 onError(e)
             }
         }
+    }
+
+    private fun cacheFileFor(
+        chat: Chat,
+        modelPath: String,
+        params: SmolLM.InferenceParams,
+    ): File {
+        val modelFile = File(modelPath)
+        val cacheKey =
+            buildString {
+                append(chat.id)
+                append('_').append(chat.llmModelId)
+                append('_').append(chat.contextSize)
+                append('_').append(chat.systemPrompt.hashCode())
+                append('_').append(params.chatTemplate.orEmpty().hashCode())
+                append('_').append(modelFile.length())
+                append('_').append(modelFile.lastModified())
+            }
+        val cacheDir = File(context.filesDir, "kv_cache").apply { mkdirs() }
+        return File(cacheDir, "$cacheKey.seq")
     }
 
     /**
@@ -209,8 +255,23 @@ class SmolLMManager(private val appDB: AppDB) {
             modelInitJob.safeCancelJobIfActive()
             resetChatJob.safeCancelJobIfActive()
 
+            val currentChat = chat
+            val currentCachePath = cachePath
+            if (isInstanceLoaded.get() &&
+                currentChat != null &&
+                !currentChat.isTask &&
+                currentCachePath != null
+            ) {
+                if (instance.saveCache(currentCachePath)) {
+                    LOGD("KV cache saved before unload")
+                } else {
+                    LOGD("No clean KV cache to save before unload")
+                }
+            }
+
             isInstanceLoaded.set(false)
             chat = null
+            cachePath = null
 
             // Close synchronously to prevent race with subsequent load()
             try {

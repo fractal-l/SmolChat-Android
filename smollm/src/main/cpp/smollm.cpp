@@ -53,6 +53,28 @@ Java_io_shubham0204_smollm_SmolLM_trimToMessageCountNative(JNIEnv* env, jobject 
     return llmInference->trimToMessageCount(static_cast<size_t>(messageCount)) ? JNI_TRUE : JNI_FALSE;
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_shubham0204_smollm_SmolLM_saveCacheNative(JNIEnv* env, jobject thiz, jlong modelPtr,
+                                                  jstring path) {
+    jboolean    isCopy       = true;
+    const char* pathCstr     = env->GetStringUTFChars(path, &isCopy);
+    auto*       llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    const bool  saved        = llmInference->saveCache(pathCstr);
+    env->ReleaseStringUTFChars(path, pathCstr);
+    return saved ? JNI_TRUE : JNI_FALSE;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_shubham0204_smollm_SmolLM_restoreCacheNative(JNIEnv* env, jobject thiz, jlong modelPtr,
+                                                     jstring path) {
+    jboolean    isCopy       = true;
+    const char* pathCstr     = env->GetStringUTFChars(path, &isCopy);
+    auto*       llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    const bool  restored     = llmInference->restoreCache(pathCstr);
+    env->ReleaseStringUTFChars(path, pathCstr);
+    return restored ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jfloat JNICALL
 Java_io_shubham0204_smollm_SmolLM_getResponseGenerationSpeed(JNIEnv* env, jobject thiz, jlong modelPtr) {
     auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);

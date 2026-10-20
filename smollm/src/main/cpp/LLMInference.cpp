@@ -1,6 +1,7 @@
 #include "LLMInference.h"
 #include <algorithm>
 #include <android/log.h>
+#include <cstdio>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -9,6 +10,55 @@
 #define TAG "[SmolLMAndroid-Cpp]"
 #define LOGi(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGe(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+namespace {
+constexpr uint32_t kCacheMagic   = 0x534D4C43; // "SMLC"
+constexpr uint32_t kCacheVersion = 1;
+constexpr uint64_t kFnvOffset    = 1469598103934665603ULL;
+constexpr uint64_t kFnvPrime     = 1099511628211ULL;
+
+uint64_t hashBytes(uint64_t hash, const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= bytes[i];
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
+uint64_t hashCache(
+    const std::vector<llama_token>& tokens,
+    const std::map<size_t, size_t>& boundaries) {
+    uint64_t hash = kFnvOffset;
+    if (!tokens.empty()) {
+        hash = hashBytes(hash, tokens.data(), tokens.size() * sizeof(llama_token));
+    }
+    for (const auto& entry : boundaries) {
+        const uint64_t pair[2] = {
+            static_cast<uint64_t>(entry.first),
+            static_cast<uint64_t>(entry.second),
+        };
+        hash = hashBytes(hash, pair, sizeof(pair));
+    }
+    return hash;
+}
+
+bool writeU32(FILE* file, uint32_t value) {
+    return fwrite(&value, sizeof(value), 1, file) == 1;
+}
+
+bool writeU64(FILE* file, uint64_t value) {
+    return fwrite(&value, sizeof(value), 1, file) == 1;
+}
+
+bool readU32(FILE* file, uint32_t& value) {
+    return fread(&value, sizeof(value), 1, file) == 1;
+}
+
+bool readU64(FILE* file, uint64_t& value) {
+    return fread(&value, sizeof(value), 1, file) == 1;
+}
+} // namespace
 
 void
 LLMInference::loadModel(const char *model_path, float minP, float temperature, bool storeChats, long contextSize,
@@ -44,6 +94,11 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
         LOGe("failed to load model from %s", model_path);
         throw std::runtime_error("loadModel() failed");
     }
+
+    _modelPath = model_path ? model_path : "";
+    _modelHash = hashBytes(kFnvOffset, _modelPath.data(), _modelPath.size());
+    const uint64_t modelSize = static_cast<uint64_t>(llama_model_size(_model));
+    _modelHash = hashBytes(_modelHash, &modelSize, sizeof(modelSize));
 
     // create an instance of llama_context
     llama_context_params ctx_params = llama_context_default_params();
@@ -191,6 +246,160 @@ LLMInference::trimToMessageCount(size_t messageCount) {
     return true;
 }
 
+bool
+LLMInference::saveCache(const char *path) {
+    if (!path || path[0] == '\0' || !_ctx || !_storeChats || !_cacheValid ||
+        _kvTokens.empty()) {
+        return false;
+    }
+
+    const std::string finalStatePath(path);
+    const std::string tempStatePath  = finalStatePath + ".tmp";
+    const std::string finalMetaPath  = finalStatePath + ".meta";
+    const std::string tempMetaPath   = tempStatePath + ".meta";
+
+    const size_t stateBytes = llama_state_seq_save_file(
+        _ctx, tempStatePath.c_str(), 0, _kvTokens.data(), _kvTokens.size());
+    if (stateBytes == 0) {
+        LOGe("saveCache: failed to write sequence state");
+        std::remove(tempStatePath.c_str());
+        return false;
+    }
+
+    FILE *file = fopen(tempMetaPath.c_str(), "wb");
+    if (!file) {
+        LOGe("saveCache: failed to open metadata file");
+        std::remove(tempStatePath.c_str());
+        return false;
+    }
+
+    const uint64_t cacheHash = hashCache(_kvTokens, _messageBoundaries);
+    bool           ok =
+        writeU32(file, kCacheMagic) &&
+        writeU32(file, kCacheVersion) &&
+        writeU64(file, _modelHash) &&
+        writeU32(file, llama_n_ctx(_ctx)) &&
+        writeU64(file, static_cast<uint64_t>(_messages.size())) &&
+        writeU64(file, static_cast<uint64_t>(_kvTokens.size())) &&
+        writeU64(file, cacheHash) &&
+        writeU64(file, static_cast<uint64_t>(_messageBoundaries.size()));
+    if (ok) {
+        for (const auto& entry : _messageBoundaries) {
+            ok = writeU64(file, static_cast<uint64_t>(entry.first)) &&
+                 writeU64(file, static_cast<uint64_t>(entry.second));
+            if (!ok) break;
+        }
+    }
+    if (fclose(file) != 0) {
+        ok = false;
+    }
+
+    if (ok) {
+        ok = std::rename(tempStatePath.c_str(), finalStatePath.c_str()) == 0;
+    }
+    if (ok) {
+        ok = std::rename(tempMetaPath.c_str(), finalMetaPath.c_str()) == 0;
+    }
+    if (!ok) {
+        LOGe("saveCache: failed to finalize cache files");
+        std::remove(tempStatePath.c_str());
+        std::remove(tempMetaPath.c_str());
+        std::remove(finalStatePath.c_str());
+        std::remove(finalMetaPath.c_str());
+        return false;
+    }
+
+    LOGi("saveCache: messages=%zu kv=%zu bytes=%zu", _messages.size(),
+         _kvTokens.size(), stateBytes);
+    return true;
+}
+
+bool
+LLMInference::restoreCache(const char *path) {
+    if (!path || path[0] == '\0' || !_ctx || !_storeChats) {
+        return false;
+    }
+
+    const std::string metaPath = std::string(path) + ".meta";
+    FILE             *file     = fopen(metaPath.c_str(), "rb");
+    if (!file) {
+        return false;
+    }
+
+    uint32_t magic = 0, version = 0, contextSize = 0;
+    uint64_t modelHash = 0, messageCount = 0, tokenCount = 0, savedHash = 0,
+             boundaryCount = 0;
+    bool headerOk =
+        readU32(file, magic) &&
+        readU32(file, version) &&
+        readU64(file, modelHash) &&
+        readU32(file, contextSize) &&
+        readU64(file, messageCount) &&
+        readU64(file, tokenCount) &&
+        readU64(file, savedHash) &&
+        readU64(file, boundaryCount);
+    if (!headerOk || magic != kCacheMagic || version != kCacheVersion ||
+        modelHash != _modelHash || contextSize != llama_n_ctx(_ctx) ||
+        messageCount != static_cast<uint64_t>(_messages.size()) ||
+        tokenCount == 0 || tokenCount > llama_n_ctx(_ctx) ||
+        boundaryCount > 100000) {
+        fclose(file);
+        return false;
+    }
+
+    std::map<size_t, size_t> boundaries;
+    bool                     boundariesOk = true;
+    for (uint64_t i = 0; i < boundaryCount; ++i) {
+        uint64_t savedMessageCount = 0, savedTokenCount = 0;
+        if (!readU64(file, savedMessageCount) ||
+            !readU64(file, savedTokenCount) ||
+            savedMessageCount > messageCount ||
+            savedTokenCount > tokenCount) {
+            boundariesOk = false;
+            break;
+        }
+        boundaries[static_cast<size_t>(savedMessageCount)] =
+            static_cast<size_t>(savedTokenCount);
+    }
+    fclose(file);
+    if (!boundariesOk) {
+        return false;
+    }
+
+    _resetContext();
+
+    std::vector<llama_token> tokens(static_cast<size_t>(tokenCount));
+    size_t                   loadedTokenCount = 0;
+    const size_t             stateBytes       = llama_state_seq_load_file(
+        _ctx, path, 0, tokens.data(), tokens.size(), &loadedTokenCount);
+    if (stateBytes == 0 || loadedTokenCount != tokenCount ||
+        hashCache(tokens, boundaries) != savedHash) {
+        LOGe("restoreCache: cache validation failed");
+        _resetContext();
+        return false;
+    }
+
+    _kvTokens          = std::move(tokens);
+    _messageBoundaries = std::move(boundaries);
+    _lastPromptTokens.clear();
+    _promptTokens.clear();
+    _response.clear();
+    _cacheResponseTokens.clear();
+    _cacheValid        = true;
+    _lastResponseEmpty = false;
+    _batch             = llama_batch{};
+    _nCtxUsed =
+        llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
+    if (_nCtxUsed <= 0) {
+        _nCtxUsed = static_cast<int>(_kvTokens.size());
+    }
+    llama_sampler_reset(_sampler);
+
+    LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu", _messages.size(),
+         _kvTokens.size(), stateBytes);
+    return true;
+}
+
 LLMInference::RenderedPrompt
 LLMInference::_renderPrompt(bool addGenerationPrompt) {
     std::vector<common_chat_msg> messages;
@@ -263,7 +472,10 @@ LLMInference::startCompletion(const char *query) {
         _messageBoundaries[_messages.size()] = _kvTokens.size();
     }
 
-    addChatMessage(query, "user");
+    const bool skipUserTurn = query == nullptr || query[0] == '\0';
+    if (!skipUserTurn) {
+        addChatMessage(query, "user");
+    }
 
     RenderedPrompt rendered = _renderPrompt(true);
 

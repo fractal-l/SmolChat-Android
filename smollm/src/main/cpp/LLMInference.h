@@ -3,16 +3,17 @@
 #include "common.h"
 #include "llama.h"
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <string>
 #include <vector>
 
 class LLMInference {
     // llama.cpp-specific types
-    llama_context* _ctx;
-    llama_model*   _model;
-    llama_sampler* _sampler;
-    llama_token    _currToken;
+    llama_context* _ctx       = nullptr;
+    llama_model*   _model     = nullptr;
+    llama_sampler* _sampler   = nullptr;
+    llama_token    _currToken = 0;
     llama_batch    _batch{};
 
     llama_batch g_batch;
@@ -25,7 +26,12 @@ class LLMInference {
     // stores the tokens for the last query
     // appended to `_messages`
     std::vector<llama_token> _promptTokens;
-    const char*              _chatTemplate;
+    const char*              _chatTemplate = nullptr;
+
+    // Model identity used to reject a persisted KV cache written by a
+    // different model or context configuration.
+    std::string _modelPath;
+    uint64_t    _modelHash = 0;
 
     // Token sequence currently stored in the KV cache: the last rendered
     // prompt followed by the tokens generated for it. On the next turn the
@@ -54,7 +60,7 @@ class LLMInference {
     std::string _response;
     std::string _cacheResponseTokens;
     // whether to cache previous messages in `_messages`
-    bool _storeChats;
+    bool _storeChats = false;
 
     // response generation metrics
     int64_t _responseGenerationTime = 0;
@@ -87,6 +93,14 @@ class LLMInference {
     // Drops messages after `messageCount` and truncates the KV cache to the
     // matching clean turn boundary. Returns false when no safe boundary exists.
     bool trimToMessageCount(size_t messageCount);
+
+    // Persists the current KV cache and turn boundaries to `path`. Returns
+    // false when there is no clean, completed turn to save.
+    bool saveCache(const char* path);
+
+    // Restores a cache saved by saveCache(). The conversation messages must
+    // already have been added, and their count must match the saved state.
+    bool restoreCache(const char* path);
 
     float getResponseGenerationTime() const;
 

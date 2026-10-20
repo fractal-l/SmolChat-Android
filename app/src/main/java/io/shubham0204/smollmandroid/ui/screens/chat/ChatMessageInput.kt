@@ -37,6 +37,7 @@ import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MicOff
 import compose.icons.feathericons.Send
+import compose.icons.feathericons.SkipForward
 import compose.icons.feathericons.StopCircle
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.Chat
@@ -168,9 +169,21 @@ fun MessageInput(
                         contentDescription = stringResource(R.string.chat_stop_generating),
                     )
                 }
+            } else if (questionText.isBlank()) {
+                FilledIconButton(
+                    onClick = {
+                        keyboardController?.hide()
+                        onEvent(ChatScreenUIEvent.ChatEvents.SkipTurn)
+                    },
+                    modifier = Modifier.size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = FeatherIcons.SkipForward,
+                        contentDescription = stringResource(R.string.chat_skip_turn),
+                    )
+                }
             } else {
                 FilledIconButton(
-                    enabled = questionText.isNotBlank(),
                     onClick = {
                         keyboardController?.hide()
                         onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(questionText))

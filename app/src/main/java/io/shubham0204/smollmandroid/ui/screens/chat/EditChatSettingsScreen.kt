@@ -88,9 +88,6 @@ data class EditableChatSettings(
     val repeatLastN: Int,
     val seed: Int,
     val contextSize: Int,
-    val nThreads: Int,
-    val useMmap: Boolean,
-    val useMlock: Boolean,
     val isTask: Boolean,
 ) {
     companion object {
@@ -106,9 +103,6 @@ data class EditableChatSettings(
                 repeatLastN = chat.repeatLastN,
                 seed = chat.seed,
                 contextSize = chat.contextSize,
-                nThreads = chat.nThreads,
-                useMmap = chat.useMmap,
-                useMlock = chat.useMlock,
                 isTask = chat.isTask,
             )
         }
@@ -125,9 +119,6 @@ data class EditableChatSettings(
         existingChat.repeatLastN = repeatLastN
         existingChat.seed = seed
         existingChat.contextSize = contextSize
-        existingChat.nThreads = nThreads
-        existingChat.useMmap = useMmap
-        existingChat.useMlock = useMlock
         return existingChat
     }
 }
@@ -170,17 +161,13 @@ fun EditChatSettingsScreen(
     var randomSeed by remember { mutableStateOf(settings.seed < 0) }
     var seedText by remember { mutableStateOf(settings.seed.coerceAtLeast(0).toString()) }
     var contextSize by remember { mutableIntStateOf(settings.contextSize) }
-    var nThreads by remember { mutableIntStateOf(settings.nThreads) }
     var takeContextSizeFromModel by remember { mutableStateOf(false) }
-    var useMmap by remember { mutableStateOf(settings.useMmap) }
-    var useMlock by remember { mutableStateOf(settings.useMlock) }
 
     var showSystemPromptsDialog by remember { mutableStateOf(false) }
     var showAddSystemPromptDialog by remember { mutableStateOf(false) }
     var showCharacterPresetsDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
-    val totalThreads = Runtime.getRuntime().availableProcessors()
 
     SmolLMAndroidTheme {
         Scaffold(
@@ -212,9 +199,6 @@ fun EditChatSettingsScreen(
                                                 seedText.toIntOrNull() ?: -1
                                             },
                                         contextSize = contextSize,
-                                        nThreads = nThreads,
-                                        useMmap = useMmap,
-                                        useMlock = useMlock,
                                     )
                                 if (settings != updatedChat) {
                                     onUpdateChat(updatedChat)
@@ -488,47 +472,6 @@ fun EditChatSettingsScreen(
                         text = stringResource(R.string.chat_settings_take_from_gguf),
                         style = MaterialTheme.typography.labelSmall,
                     )
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Text(text = "Number of Threads", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    stringResource(R.string.chat_settings_desc_n_threads),
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                Slider(
-                    value = nThreads.toFloat(),
-                    onValueChange = { nThreads = it.toInt() },
-                    valueRange = 0.0f..(totalThreads).toFloat(),
-                    steps = totalThreads,
-                )
-                Text(text = "$nThreads", style = MaterialTheme.typography.labelSmall)
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Checkbox(checked = useMmap, onCheckedChange = { useMmap = it })
-                    Column {
-                        Text(text = "Use mmap", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text =
-                                "Disable memory mapping (mmap) for potentially fewer pageouts and better performance on low-memory systems, but with slower load times and a risk of preventing loading large models.",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    Checkbox(checked = useMlock, onCheckedChange = { useMlock = it })
-                    Column {
-                        Text(text = "Use mlock", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            text =
-                                "Keep the model loaded in RAM for faster performance, but uses more memory and may load slower.",
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
             }

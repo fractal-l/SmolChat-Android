@@ -242,6 +242,24 @@ class SmolLM {
     }
 
     /**
+     * Persists the current KV cache to [path]. The conversation must end at a completed turn.
+     * Returns false when there is no reusable cache state.
+     */
+    fun saveCache(path: String): Boolean {
+        verifyHandle()
+        return saveCacheNative(nativePtr, path)
+    }
+
+    /**
+     * Restores a KV cache previously written by [saveCache]. The conversation messages must
+     * already have been added. Returns false if the cache is missing or incompatible.
+     */
+    fun restoreCache(path: String): Boolean {
+        verifyHandle()
+        return restoreCacheNative(nativePtr, path)
+    }
+
+    /**
      * Adds the assistant message for LLM inference An assistant message is the response given by
      * the LLM for a previous query in the conversation
      */
@@ -373,6 +391,10 @@ class SmolLM {
     private external fun clearChatNative(modelPtr: Long)
 
     private external fun trimToMessageCountNative(modelPtr: Long, messageCount: Int): Boolean
+
+    private external fun saveCacheNative(modelPtr: Long, path: String): Boolean
+
+    private external fun restoreCacheNative(modelPtr: Long, path: String): Boolean
 
     // Returns true if Jinja template was used, false if legacy fallback was needed.
     private external fun startCompletion(modelPtr: Long, prompt: String): Boolean

@@ -38,6 +38,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,6 +46,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -64,6 +66,8 @@ import compose.icons.feathericons.Share
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.AppDB
 import io.shubham0204.smollmandroid.data.ChatArchiveJson
+import io.shubham0204.smollmandroid.data.HardwareSettings
+import io.shubham0204.smollmandroid.data.HardwareSettingsStore
 import io.shubham0204.smollmandroid.data.ThemeStore
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
@@ -83,12 +87,18 @@ class SettingsActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val themeStore = koinInject<ThemeStore>()
+            val hardwareSettingsStore = koinInject<HardwareSettingsStore>()
             val appDB = koinInject<AppDB>()
             val themeMode by themeStore.themeMode.collectAsState()
+            val hardwareSettings by hardwareSettingsStore.settings.collectAsState()
             SettingsScreenUI(
                 appDB = appDB,
                 themeMode = themeMode,
+                hardwareSettings = hardwareSettings,
                 onThemeModeChange = themeStore::setThemeMode,
+                onNThreadsChange = hardwareSettingsStore::setNThreads,
+                onUseMmapChange = hardwareSettingsStore::setUseMmap,
+                onUseMlockChange = hardwareSettingsStore::setUseMlock,
                 onBack = { finish() },
             )
         }
@@ -100,11 +110,16 @@ class SettingsActivity : ComponentActivity() {
 private fun SettingsScreenUI(
     appDB: AppDB,
     themeMode: ThemeMode,
+    hardwareSettings: HardwareSettings,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onNThreadsChange: (Int) -> Unit,
+    onUseMmapChange: (Boolean) -> Unit,
+    onUseMlockChange: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val totalThreads = Runtime.getRuntime().availableProcessors().coerceAtLeast(2)
 
     val exportLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -245,6 +260,70 @@ private fun SettingsScreenUI(
                                 }
                             }
                         }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Text(
+                    text = stringResource(R.string.settings_performance),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.settings_performance_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.settings_num_threads),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    text = stringResource(R.string.chat_settings_desc_n_threads),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = hardwareSettings.nThreads.toFloat(),
+                    onValueChange = { onNThreadsChange(it.toInt()) },
+                    valueRange = 1.0f..totalThreads.toFloat(),
+                    steps = (totalThreads - 1).coerceAtLeast(0),
+                )
+                Text(
+                    text = "${hardwareSettings.nThreads}",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = hardwareSettings.useMmap,
+                        onCheckedChange = onUseMmapChange,
+                    )
+                    Column {
+                        Text(
+                            text = stringResource(R.string.settings_use_mmap),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_use_mmap_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = hardwareSettings.useMlock,
+                        onCheckedChange = onUseMlockChange,
+                    )
+                    Column {
+                        Text(
+                            text = stringResource(R.string.settings_use_mlock),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.settings_use_mlock_desc),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
                     }
                 }
 

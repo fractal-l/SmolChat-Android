@@ -35,6 +35,7 @@ import io.shubham0204.smollmandroid.data.CharacterPresetsStore
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.data.ChatMessage
 import io.shubham0204.smollmandroid.data.Folder
+import io.shubham0204.smollmandroid.data.HardwareSettingsStore
 import io.shubham0204.smollmandroid.data.LLMModel
 import io.shubham0204.smollmandroid.data.SharedPrefStore
 import io.shubham0204.smollmandroid.data.SystemPrompt
@@ -81,6 +82,8 @@ sealed class ChatScreenUIEvent {
         data class DeleteModel(val model: LLMModel) : ChatScreenUIEvent()
 
         data class SendUserQuery(val query: String) : ChatScreenUIEvent()
+
+        data object SkipTurn : ChatScreenUIEvent()
 
         data object StopGeneration : ChatScreenUIEvent()
 
@@ -188,6 +191,7 @@ class ChatScreenViewModel(
     val sharedPrefStore: SharedPrefStore,
     val systemPromptsStore: SystemPromptsStore,
     val characterPresetsStore: CharacterPresetsStore,
+    val hardwareSettingsStore: HardwareSettingsStore,
 ) : ViewModel() {
     enum class ModelLoadingState {
         NOT_LOADED, // model loading not started
@@ -225,6 +229,7 @@ class ChatScreenViewModel(
     fun loadModel(onComplete: (ModelLoadingState) -> Unit = {}) {
         val chat = _uiState.value.chat
         val model = modelsRepository.getModelFromId(chat.llmModelId)
+        val hardwareSettings = hardwareSettingsStore.settings.value
         if (chat.llmModelId == -1L) {
             _uiState.update { it.copy(showSelectModelListDialog = true) }
         } else {
@@ -241,9 +246,9 @@ class ChatScreenViewModel(
                         resolveChatTemplate(model, chat).takeIf {
                             it.isNotBlank() && ("{%" in it || "{{" in it)
                         },
-                    numThreads = chat.nThreads,
-                    useMmap = chat.useMmap,
-                    useMlock = chat.useMlock,
+                    numThreads = hardwareSettings.nThreads,
+                    useMmap = hardwareSettings.useMmap,
+                    useMlock = hardwareSettings.useMlock,
                     topK = chat.topK,
                     topP = chat.topP,
                     repeatPenalty = chat.repeatPenalty,
@@ -407,6 +412,10 @@ class ChatScreenViewModel(
 
             is ChatScreenUIEvent.ChatEvents.SendUserQuery -> {
                 sendUserQuery(event.query)
+            }
+
+            ChatScreenUIEvent.ChatEvents.SkipTurn -> {
+                sendUserQuery("", addMessageToDB = false)
             }
 
             ChatScreenUIEvent.ChatEvents.StopGeneration -> {
