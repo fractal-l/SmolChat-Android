@@ -33,15 +33,38 @@ jobs:
       - name: Setup ccache
         uses: ./.github/actions/setup-ccache
 
+      - name: Decode signing keystore
+        env:
+          ENCODED_STRING: ${{ secrets.KEYSTORE_BASE_64 }}
+        run: |
+          if [ -n "$ENCODED_STRING" ]; then
+            printf '%s' "$ENCODED_STRING" | base64 -d > release.p12
+          fi
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
+        env:
+          RELEASE_KEYSTORE_FILE: release.p12
+          RELEASE_KEYSTORE_TYPE: PKCS12
+          RELEASE_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          RELEASE_KEYSTORE_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: ./gradlew assembleDebug --stacktrace --build-cache
+
+      - name: Verify APK signature
+        run: |
+          BUILD_TOOLS=$(ls -d "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/* | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
 
       - name: Show ccache stats
         if: always()
         run: ccache --show-stats
+
+      - name: Remove signing keystore
+        if: always()
+        run: rm -f release.p12
 
       - name: Upload APK to artifacts
         uses: actions/upload-artifact@v4

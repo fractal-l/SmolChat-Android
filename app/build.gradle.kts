@@ -7,6 +7,14 @@ plugins {
 }
 
 val releaseKeystoreFile = rootProject.file(System.getenv("RELEASE_KEYSTORE_FILE") ?: "release.p12")
+val releaseKeystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
+val releaseKeystoreAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
+val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+val hasReleaseSigning =
+    releaseKeystoreFile.exists() &&
+        !releaseKeystorePassword.isNullOrBlank() &&
+        !releaseKeystoreAlias.isNullOrBlank() &&
+        !releaseKeyPassword.isNullOrBlank()
 
 android {
     namespace = "io.shubham0204.smollmandroid"
@@ -24,21 +32,13 @@ android {
     }
 
     signingConfigs {
-        val keystorePassword = System.getenv("RELEASE_KEYSTORE_PASSWORD")
-        val keystoreAlias = System.getenv("RELEASE_KEYSTORE_ALIAS")
-        val keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
-        val hasReleaseSigning =
-            releaseKeystoreFile.exists() &&
-                !keystorePassword.isNullOrBlank() &&
-                !keystoreAlias.isNullOrBlank() &&
-                !keyPassword.isNullOrBlank()
         create("release") {
             if (hasReleaseSigning) {
                 storeFile = releaseKeystoreFile
                 storeType = System.getenv("RELEASE_KEYSTORE_TYPE") ?: "PKCS12"
-                storePassword = keystorePassword
-                keyAlias = keystoreAlias
-                this.keyPassword = keyPassword
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeystoreAlias
+                this.keyPassword = releaseKeyPassword
             }
         }
     }
@@ -50,6 +50,13 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Sign CI debug APKs with the release key when it is available so
+            // debug and release builds can update each other seamlessly.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         getByName("release") {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
