@@ -62,6 +62,7 @@ class MDRenderer(private val context: Context) {
             )
             .build()
 
+    @Synchronized
     fun render(mdText: String): Spanned {
         return markwon.render(markwon.parse(mdText))
     }

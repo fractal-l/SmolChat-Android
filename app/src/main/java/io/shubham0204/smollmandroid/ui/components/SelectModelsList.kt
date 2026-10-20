@@ -401,9 +401,10 @@ private fun ModelListItem(
                 IconButton(
                     onClick = {
                         createAlertDialog(
-                            dialogTitle = context.getString(R.string.dialog_title_delete_chat),
+                            dialogTitle = context.getString(R.string.dialog_title_delete_model),
                             dialogText =
-                                context.getString(R.string.dialog_text_delete_chat).format(model.name),
+                                context.getString(R.string.dialog_text_delete_model)
+                                    .format(model.name),
                             dialogPositiveButtonText = context.getString(R.string.dialog_pos_delete),
                             dialogNegativeButtonText = context.getString(R.string.dialog_neg_cancel),
                             onPositiveButtonClick = { onModelDeleteClick(model) },
@@ -413,7 +414,7 @@ private fun ModelListItem(
                 ) {
                     Icon(
                         FeatherIcons.Trash,
-                        contentDescription = "Delete Model",
+                        contentDescription = stringResource(R.string.dialog_title_delete_model),
                         tint = MaterialTheme.colorScheme.secondary,
                     )
                 }

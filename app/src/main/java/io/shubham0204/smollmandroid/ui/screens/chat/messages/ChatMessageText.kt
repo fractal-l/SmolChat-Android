@@ -45,6 +45,10 @@ fun ChatMessageText(
             textView.highlightColor = Color.YELLOW
             textView
         },
-        update = { it.text = message },
+        update = { textView ->
+            if (textView.text !== message) {
+                textView.text = message
+            }
+        },
     )
 }

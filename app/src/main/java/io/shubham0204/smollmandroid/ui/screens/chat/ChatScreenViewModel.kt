@@ -53,17 +53,21 @@ import io.shubham0204.smollmandroid.ui.screens.manage_asr.availableASRModels
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.annotation.KoinViewModel
 import java.util.Date
 import kotlin.math.pow
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val LOGTAG = "[SmolLMAndroid-Kt]"
 private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
@@ -159,7 +163,6 @@ data class AudioTranscriptionUIState(
 data class ChatScreenUIState(
     val chat: Chat = Chat(),
     val isGeneratingResponse: Boolean = false,
-    val renderedPartialResponse: Spanned? = null,
     val modelLoadingState: ChatScreenViewModel.ModelLoadingState =
         ChatScreenViewModel.ModelLoadingState.NOT_LOADED,
     val responseGenerationsSpeed: Float? = null,
@@ -204,12 +207,20 @@ class ChatScreenViewModel(
     private val _uiState = MutableStateFlow(initializeUIState())
     val uiState: StateFlow<ChatScreenUIState> = _uiState
 
+    private val _renderedPartialResponse = MutableStateFlow<Spanned?>(null)
+    val renderedPartialResponse: StateFlow<Spanned?> = _renderedPartialResponse
+    private val partialResponseText = MutableStateFlow("")
+    private var partialRenderJob: Job? = null
+
     // Cache size of 500 messages (stores Pair<rawText, renderedSpanned>)
     private val renderedMessageCache = LruCache<Long, Pair<String, Spanned>>(500)
 
     // Used to pre-set a value in the query text-field of the chat screen
     // It is set when a query comes from a 'share-text' intent in ChatActivity
     var questionTextDefaultVal: String? = null
+
+    fun consumeQuestionTextDefaultVal(): String? =
+        questionTextDefaultVal.also { questionTextDefaultVal = null }
 
     // regex to replace <think> tags with <blockquote>
     // to render them correctly in Markdown
@@ -435,7 +446,7 @@ class ChatScreenViewModel(
                     .show()
             }
 
-            ChatScreenUIEvent.ChatEvents.LoadChatModel -> {}
+            ChatScreenUIEvent.ChatEvents.LoadChatModel -> loadModel()
 
             is ChatScreenUIEvent.ChatEvents.SendUserQuery -> {
                 sendUserQuery(event.query)
@@ -868,7 +879,8 @@ class ChatScreenViewModel(
             appDB.addUserMessage(chat.id, query)
             chat = nameChatFromFirstMessage(chat, query)
         }
-        _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
+        _uiState.update { it.copy(isGeneratingResponse = true) }
+        startPartialRendering()
         smolLMManager.getResponse(
             query,
             responseTransform = {
@@ -879,9 +891,10 @@ class ChatScreenViewModel(
                 }
             },
             onPartialResponseGenerated = { resp ->
-                _uiState.update { it.copy(renderedPartialResponse = mdRenderer.render(resp)) }
+                partialResponseText.value = resp
             },
             onSuccess = { response ->
+                stopPartialRendering()
                 val updatedChat = chat.copy(contextSizeConsumed = response.contextLengthUsed)
                 _uiState.update {
                     it.copy(
@@ -907,27 +920,60 @@ class ChatScreenViewModel(
                 }
             },
             onCancelled = {
-                // ignore CancellationException, as it was called because
-                // `responseGenerationJob` was cancelled in the `stopGeneration` method
+                stopPartialRendering()
+                _uiState.update { it.copy(isGeneratingResponse = false) }
             },
             onError = { exception ->
+                stopPartialRendering()
                 _uiState.update { it.copy(isGeneratingResponse = false) }
                 createAlertDialog(
-                    dialogTitle = "An error occurred",
+                    dialogTitle = context.getString(R.string.dialog_err_title),
                     dialogText =
-                        "The app is unable to process the query. The error message is: ${exception.message}",
-                    dialogPositiveButtonText = "Change model",
-                    onPositiveButtonClick = {},
-                    dialogNegativeButtonText = "",
+                        context.getString(R.string.dialog_err_text, exception.message),
+                    dialogPositiveButtonText = context.getString(R.string.dialog_err_change_model),
+                    onPositiveButtonClick = {
+                        onEvent(
+                            ChatScreenUIEvent.DialogEvents.ToggleSelectModelListDialog(visible = true)
+                        )
+                    },
+                    dialogNegativeButtonText = context.getString(R.string.dialog_err_close),
                     onNegativeButtonClick = {},
                 )
             },
         )
     }
 
+    @OptIn(FlowPreview::class)
+    private fun startPartialRendering() {
+        partialRenderJob?.cancel()
+        partialResponseText.value = ""
+        _renderedPartialResponse.value = null
+        partialRenderJob =
+            viewModelScope.launch {
+                partialResponseText
+                    .sample(120.milliseconds)
+                    .collect { text ->
+                        if (text.isBlank()) return@collect
+                        val rendered =
+                            withContext(Dispatchers.Default) {
+                                mdRenderer.render(text)
+                            }
+                        _renderedPartialResponse.value = rendered
+                    }
+            }
+    }
+
+    private fun stopPartialRendering() {
+        partialRenderJob?.cancel()
+        partialRenderJob = null
+        partialResponseText.value = ""
+        _renderedPartialResponse.value = null
+    }
+
     private fun stopGeneration() {
         smolLMManager.stopResponseGeneration()
-        _uiState.update { it.copy(isGeneratingResponse = false, renderedPartialResponse = null) }
+        stopPartialRendering()
+        _uiState.update { it.copy(isGeneratingResponse = false) }
     }
 
     private fun switchChat(chat: Chat) {

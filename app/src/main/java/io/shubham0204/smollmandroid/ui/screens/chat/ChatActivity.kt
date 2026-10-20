@@ -19,6 +19,7 @@ package io.shubham0204.smollmandroid.ui.screens.chat
 import CustomNavTypes
 import android.content.Intent
 import android.os.Bundle
+import android.text.Spanned
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -35,6 +36,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,6 +56,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -200,8 +203,15 @@ class ChatActivity : ComponentActivity() {
                         viewModel.uiState.collectAsStateWithLifecycle(
                             LocalLifecycleOwner.current
                         )
+                        val renderedPartialResponse by
+                        viewModel.renderedPartialResponse.collectAsStateWithLifecycle(
+                            LocalLifecycleOwner.current
+                        )
+                        val defaultQuestion = remember { viewModel.consumeQuestionTextDefaultVal() }
                         ChatActivityScreenUI(
                             uiState,
+                            renderedPartialResponse = renderedPartialResponse,
+                            defaultQuestion = defaultQuestion,
                             onEditChatParamsClick = { chat, modelContextSize ->
                                 navController.navigate(
                                     EditChatSettingsRoute(chat, modelContextSize)
@@ -260,6 +270,8 @@ private fun PreviewChatActivityScreenUI() {
 @Composable
 fun ChatActivityScreenUI(
     uiState: ChatScreenUIState,
+    renderedPartialResponse: Spanned? = null,
+    defaultQuestion: String? = null,
     onEditChatParamsClick: (Chat, Int) -> Unit,
     onBenchmarkModelClick: () -> Unit,
     onEvent: (ChatScreenUIEvent) -> Unit,
@@ -356,9 +368,10 @@ fun ChatActivityScreenUI(
                     modifier =
                         Modifier
                             .padding(innerPadding)
+                            .imePadding()
                             .background(MaterialTheme.colorScheme.surface)
                 ) {
-                    ScreenUI(uiState, onEvent)
+                    ScreenUI(uiState, renderedPartialResponse, defaultQuestion, onEvent)
                 }
             }
 
@@ -410,7 +423,12 @@ fun ChatActivityScreenUI(
 }
 
 @Composable
-private fun ColumnScope.ScreenUI(uiState: ChatScreenUIState, onEvent: (ChatScreenUIEvent) -> Unit) {
+private fun ColumnScope.ScreenUI(
+    uiState: ChatScreenUIState,
+    renderedPartialResponse: Spanned?,
+    defaultQuestion: String?,
+    onEvent: (ChatScreenUIEvent) -> Unit,
+) {
     if (uiState.memoryUsage != null) {
         RAMUsageLabel(uiState.memoryUsage)
     }
@@ -420,7 +438,7 @@ private fun ColumnScope.ScreenUI(uiState: ChatScreenUIState, onEvent: (ChatScree
     MessagesList(
         messages = uiState.messages,
         isGeneratingResponse = uiState.isGeneratingResponse,
-        renderedPartialResponse = uiState.renderedPartialResponse,
+        renderedPartialResponse = renderedPartialResponse,
         chatId = uiState.chat.id,
         assistantName = assistantName,
         responseGenerationsSpeed = uiState.responseGenerationsSpeed,
@@ -432,7 +450,8 @@ private fun ColumnScope.ScreenUI(uiState: ChatScreenUIState, onEvent: (ChatScree
         uiState.modelLoadingState,
         uiState.audioTranscriptionUIState,
         uiState.isGeneratingResponse,
-        onEvent
+        onEvent,
+        defaultQuestion = defaultQuestion,
     )
 }
 

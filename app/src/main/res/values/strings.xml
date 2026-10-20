@@ -1,13 +1,13 @@
 <resources>
     <string name="app_name">SmolChat</string>
-    <string name="chat_select_model">Select a model ...</string>
-    <string name="chat_loading_model">Loading model...</string>
-    <string name="chat_model_cannot_be_loaded">The model selected for the chat cannot be loaded</string>
+    <string name="chat_select_model">Choose a model to get started</string>
+    <string name="chat_loading_model">Getting your model ready…</string>
+    <string name="chat_model_cannot_be_loaded">This model couldn’t be loaded. You can retry or choose another one.</string>
     <string name="chat_ask_question">Ask a question</string>
     <string name="chat_role_assistant">Assistant</string>
     <string name="chat_empty_title">Start a conversation</string>
     <string name="chat_empty_subtitle">Ask anything. Everything runs locally on your device.</string>
-    <string name="chat_message_hint">Message</string>
+    <string name="chat_message_hint">Ask anything…</string>
     <string name="chat_send_message">Send message</string>
     <string name="chat_skip_turn">Skip turn</string>
     <string name="chat_stop_generating">Stop generating</string>
@@ -31,6 +31,8 @@
     <string name="chat_options_change_model">Change Model</string>
     <string name="chat_options_ctx_length_usage">Context Length Usage</string>
     <string name="dialog_title_delete_chat">Delete Chat</string>
+    <string name="dialog_title_delete_model">Delete Model</string>
+    <string name="dialog_text_delete_model">Delete \'%1$s\'? The model file will be removed from your device.</string>
     <string name="dialog_text_delete_chat">Are you sure you want to delete chat \'%1$s\'?</string>
     <string name="dialog_pos_delete">Delete</string>
     <string name="dialog_neg_cancel">Cancel</string>
@@ -77,7 +79,14 @@
     <string name="download_models_select_gguf_button">Select GGUF file</string>
     <string name="download_model_gguf_url">URL for GGUF Instruct Model</string>
     <string name="download_model_hf_screen_title">Browse Models from HuggingFace</string>
-    <string name="download_model_hf_search_label">Search for models ...</string>
+    <string name="download_model_hf_search_label">Search for models…</string>
+    <string name="model_search_loading">Looking for models…</string>
+    <string name="model_search_offline_title">Couldn’t reach Hugging Face</string>
+    <string name="model_search_offline_desc">Check your connection, then try again.</string>
+    <string name="model_search_empty_title">No models found</string>
+    <string name="model_search_empty_desc">Try a different search term.</string>
+    <string name="action_try_again">Try again</string>
+    <string name="chat_choose_another_model">Choose model</string>
     <string name="download_model_hf_details_title">Model Details</string>
     <string name="dialog_ctx_usage_title">Context Length Usage</string>
     <string name="dialog_ctx_usage_text">You have consumed %1$s tokens out of available %2$s tokens.</string>

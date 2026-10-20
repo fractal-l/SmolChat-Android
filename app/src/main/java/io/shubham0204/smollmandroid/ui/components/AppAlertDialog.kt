@@ -22,42 +22,47 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 
-private var title = ""
-private var text = ""
-private var positiveButtonText = ""
-private var negativeButtonText = ""
-private lateinit var positiveButtonOnClick: (() -> Unit)
-private lateinit var negativeButtonOnClick: (() -> Unit)
-private val alertDialogShowStatus = mutableStateOf(false)
+private data class AlertDialogState(
+    val title: String,
+    val text: String,
+    val positiveButtonText: String,
+    val onPositiveButtonClick: () -> Unit,
+    val negativeButtonText: String? = null,
+    val onNegativeButtonClick: (() -> Unit)? = null,
+)
+
+private var alertDialogState by mutableStateOf<AlertDialogState?>(null)
 
 @Composable
 fun AppAlertDialog() {
-    val visible by remember { alertDialogShowStatus }
-    if (visible) {
+    val state = alertDialogState
+    if (state != null) {
         AlertDialog(
-            title = { Text(text = title) },
-            text = { Text(text = text) },
+            title = { Text(text = state.title) },
+            text = { Text(text = state.text) },
             onDismissRequest = { /* All alert dialogs are non-cancellable */ },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        alertDialogShowStatus.value = false
-                        positiveButtonOnClick()
+                        alertDialogState = null
+                        state.onPositiveButtonClick()
                     }
                 ) {
-                    Text(text = positiveButtonText)
+                    Text(text = state.positiveButtonText)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        alertDialogShowStatus.value = false
-                        negativeButtonOnClick()
+                state.negativeButtonText?.let { negativeText ->
+                    TextButton(
+                        onClick = {
+                            alertDialogState = null
+                            state.onNegativeButtonClick?.invoke()
+                        }
+                    ) {
+                        Text(text = negativeText)
                     }
-                ) {
-                    Text(text = negativeButtonText)
                 }
             },
         )
@@ -72,11 +77,13 @@ fun createAlertDialog(
     onPositiveButtonClick: (() -> Unit),
     onNegativeButtonClick: (() -> Unit)?,
 ) {
-    title = dialogTitle
-    text = dialogText
-    positiveButtonOnClick = onPositiveButtonClick
-    onNegativeButtonClick?.let { negativeButtonOnClick = it }
-    positiveButtonText = dialogPositiveButtonText
-    dialogNegativeButtonText?.let { negativeButtonText = it }
-    alertDialogShowStatus.value = true
+    alertDialogState =
+        AlertDialogState(
+            title = dialogTitle,
+            text = dialogText,
+            positiveButtonText = dialogPositiveButtonText,
+            onPositiveButtonClick = onPositiveButtonClick,
+            negativeButtonText = dialogNegativeButtonText?.takeIf { it.isNotBlank() },
+            onNegativeButtonClick = onNegativeButtonClick,
+        )
 }

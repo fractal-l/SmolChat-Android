@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -19,6 +21,7 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
@@ -31,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Cpu
@@ -57,7 +61,17 @@ fun MessageInput(
         return
     }
     if (modelLoadingState == ModelLoadingState.FAILURE) {
-        ComposerStatusCard(text = stringResource(R.string.chat_model_cannot_be_loaded))
+        ComposerStatusCard(
+            text = stringResource(R.string.chat_model_cannot_be_loaded),
+            actionLabel = stringResource(R.string.action_try_again),
+            onAction = { onEvent(ChatScreenUIEvent.ChatEvents.LoadChatModel) },
+            secondaryActionLabel = stringResource(R.string.chat_choose_another_model),
+            onSecondaryAction = {
+                onEvent(
+                    ChatScreenUIEvent.DialogEvents.ToggleSelectModelListDialog(visible = true)
+                )
+            },
+        )
         return
     }
     if (modelLoadingState != ModelLoadingState.SUCCESS) {
@@ -70,6 +84,14 @@ fun MessageInput(
 
     var questionText by rememberSaveable { mutableStateOf(defaultQuestion ?: "") }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val sendMessage = {
+        val message = questionText.trim()
+        if (message.isNotEmpty()) {
+            keyboardController?.hide()
+            onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(message))
+            questionText = ""
+        }
+    }
 
     Surface(
         modifier =
@@ -152,6 +174,8 @@ fun MessageInput(
                             }
                     )
                 },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { sendMessage() }),
             )
             Spacer(modifier = Modifier.width(6.dp))
             if (isGeneratingResponse) {
@@ -184,11 +208,7 @@ fun MessageInput(
                 }
             } else {
                 FilledIconButton(
-                    onClick = {
-                        keyboardController?.hide()
-                        onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(questionText))
-                        questionText = ""
-                    },
+                    onClick = sendMessage,
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
@@ -202,7 +222,14 @@ fun MessageInput(
 }
 
 @Composable
-private fun ComposerStatusCard(text: String, showProgress: Boolean = false) {
+private fun ComposerStatusCard(
+    text: String,
+    showProgress: Boolean = false,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null,
+) {
     Surface(
         modifier =
             Modifier
@@ -235,6 +262,18 @@ private fun ComposerStatusCard(text: String, showProgress: Boolean = false) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (actionLabel != null && onAction != null) {
+                    Row {
+                        TextButton(onClick = onAction) {
+                            Text(actionLabel)
+                        }
+                        if (secondaryActionLabel != null && onSecondaryAction != null) {
+                            TextButton(onClick = onSecondaryAction) {
+                                Text(secondaryActionLabel)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

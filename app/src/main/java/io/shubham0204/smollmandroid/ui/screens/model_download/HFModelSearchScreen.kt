@@ -19,6 +19,7 @@ package io.shubham0204.smollmandroid.ui.screens.model_download
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,12 +46,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,8 +62,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import androidx.paging.LoadState
 import androidx.paging.compose.collectAsLazyPagingItems
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
@@ -72,6 +80,7 @@ import io.shubham0204.smollmandroid.ui.components.AppProgressDialog
 import io.shubham0204.smollmandroid.ui.components.EmptyState
 import io.shubham0204.smollmandroid.ui.components.SectionHeader
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,8 +115,14 @@ fun HFModelDownloadScreen(
                         .padding(innerPadding)
                         .background(MaterialTheme.colorScheme.surface)
                         .fillMaxSize()
+                        .imePadding()
             ) {
                 var query by rememberSaveable { mutableStateOf("") }
+                var debouncedQuery by rememberSaveable { mutableStateOf("") }
+                LaunchedEffect(query) {
+                    delay(300)
+                    debouncedQuery = query
+                }
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     Spacer(modifier = Modifier.height(8.dp))
                     TextField(
@@ -134,8 +149,9 @@ fun HFModelDownloadScreen(
                             Text(text = stringResource(R.string.download_model_hf_search_label))
                         },
                         keyboardOptions =
-                            KeyboardOptions.Default.copy(
-                                capitalization = KeyboardCapitalization.Sentences
+                            KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                imeAction = ImeAction.Search,
                             ),
                         singleLine = true,
                     )
@@ -147,7 +163,7 @@ fun HFModelDownloadScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
                 ModelList(
-                    query = query,
+                    query = debouncedQuery,
                     viewModel = viewModel,
                     onModelClick = onModelClick,
                     modifier = Modifier.weight(1f),
@@ -165,24 +181,109 @@ private fun ModelList(
     onModelClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (!viewModel.checkConnectivity()) {
-        EmptyState(
-            icon = FeatherIcons.Globe,
-            title = "Could not reach Hugging Face",
-            description = "Check your internet connection and try again.",
-            modifier = modifier,
-        )
-    } else {
-        val models = viewModel.getModels(query).collectAsLazyPagingItems()
-        LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(count = models.itemCount) { index ->
-                models[index]?.let { model -> ModelListItem(model, onModelClick = onModelClick) }
+    val modelsFlow = remember(query) { viewModel.getModels(query) }
+    val models = modelsFlow.collectAsLazyPagingItems()
+    val refreshState = models.loadState.refresh
+
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        when {
+            refreshState is LoadState.Loading && models.itemCount == 0 -> {
+                item {
+                    ModelListLoading(modifier = Modifier.fillParentMaxSize())
+                }
+            }
+
+            refreshState is LoadState.Error && models.itemCount == 0 -> {
+                item {
+                    Box(
+                        modifier = Modifier.fillParentMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EmptyState(
+                            icon = FeatherIcons.Globe,
+                            title = stringResource(R.string.model_search_offline_title),
+                            description = stringResource(R.string.model_search_offline_desc),
+                            actionLabel = stringResource(R.string.action_try_again),
+                            onAction = { models.retry() },
+                        )
+                    }
+                }
+            }
+
+            refreshState is LoadState.NotLoading && models.itemCount == 0 -> {
+                item {
+                    Box(
+                        modifier = Modifier.fillParentMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        EmptyState(
+                            icon = FeatherIcons.Search,
+                            title = stringResource(R.string.model_search_empty_title),
+                            description = stringResource(R.string.model_search_empty_desc),
+                        )
+                    }
+                }
             }
         }
+
+        items(count = models.itemCount) { index ->
+            models[index]?.let { model -> ModelListItem(model, onModelClick = onModelClick) }
+        }
+
+        if (models.loadState.append is LoadState.Loading) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                    )
+                }
+            }
+        }
+
+        if (models.loadState.append is LoadState.Error) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    TextButton(onClick = { models.retry() }) {
+                        Text(stringResource(R.string.action_try_again))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ModelListLoading(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            strokeWidth = 2.dp,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.model_search_loading),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

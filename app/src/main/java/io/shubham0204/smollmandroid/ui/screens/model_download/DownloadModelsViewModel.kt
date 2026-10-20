@@ -24,8 +24,9 @@ import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.paging.PagingData
-import io.shubham0204.hf_model_hub_api.HFEndpoints
+import androidx.paging.cachedIn
 import io.shubham0204.hf_model_hub_api.HFModelInfo
 import io.shubham0204.hf_model_hub_api.HFModelSearch
 import io.shubham0204.hf_model_hub_api.HFModelTree
@@ -42,13 +43,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.Single
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.nio.file.Paths
 
 @Single
@@ -87,22 +85,7 @@ class DownloadModelsViewModel(
     }
 
     fun getModels(query: String): Flow<PagingData<HFModelSearch.ModelSearchResult>> =
-        hfModelsAPI.getModelsList(query)
-
-    fun checkConnectivity(): Boolean =
-        runBlocking(Dispatchers.IO) {
-            try {
-                val url = URL(HFEndpoints.getHFBaseURL())
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.connect()
-                connection.responseCode == 200
-            } catch (e: Exception) {
-                false
-            }
-        }
+        hfModelsAPI.getModelsList(query).cachedIn(viewModelScope)
 
     /**
      * Given the model file URI, copy the model file to the app's internal directory. Once copied,

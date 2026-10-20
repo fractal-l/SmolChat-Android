@@ -165,8 +165,7 @@ class AppDB(context: Context) {
 
     fun getModel(id: Long): LLMModel = runBlocking(Dispatchers.IO) { db.llmModelDao().getModel(id) }
 
-    fun getModels(): Flow<List<LLMModel>> =
-        runBlocking(Dispatchers.IO) { db.llmModelDao().getAllModels() }
+    fun getModels(): Flow<List<LLMModel>> = db.llmModelDao().getAllModels()
 
     fun getModelsList(): List<LLMModel> =
         runBlocking(Dispatchers.IO) { db.llmModelDao().getAllModelsList() }
