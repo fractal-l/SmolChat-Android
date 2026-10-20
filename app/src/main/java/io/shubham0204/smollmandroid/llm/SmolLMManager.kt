@@ -48,6 +48,10 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     // Use ReentrantLock for thread-safe state management without suspending
     private val stateLock = ReentrantLock()
 
+    // The native cache writer is not re-entrant, so serialize cache file I/O
+    // independently from the rest of the model state.
+    private val cacheLock = ReentrantLock()
+
     @Volatile
     private var responseGenerationJob: Job? = null
 
@@ -110,7 +114,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                             !previousChat.isTask &&
                             previousCachePath != null
                         ) {
-                            if (instance.saveCache(previousCachePath)) {
+                            if (saveCacheToDisk(previousCachePath)) {
                                 LOGD("Previous KV cache saved")
                             }
                         }
@@ -140,7 +144,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                                 }
                             }
                             val restored =
-                                newCachePath?.let { instance.restoreCache(it.absolutePath) } ?: false
+                                newCachePath?.let { restoreCacheFromDisk(it.absolutePath) } ?: false
                             LOGD(
                                 if (restored) {
                                     "KV cache restored"
@@ -190,6 +194,12 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         return File(cacheDir, "$cacheKey.seq")
     }
 
+    private fun saveCacheToDisk(path: String): Boolean =
+        cacheLock.withLock { instance.saveCache(path) }
+
+    private fun restoreCacheFromDisk(path: String): Boolean =
+        cacheLock.withLock { instance.restoreCache(path) }
+
     /**
      * Rebuilds the native conversation from persisted messages without closing/reloading the model.
      * Used after editing or rolling back messages.
@@ -234,6 +244,17 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                                 }
                             }
                         }
+                        // Persist the rebuilt/trimmed state immediately so a
+                        // later crash cannot leave the on-disk cache paired
+                        // with a different message list.
+                        val currentCachePath = cachePath
+                        if (!chat.isTask && currentCachePath != null &&
+                            isInstanceLoaded.get()
+                        ) {
+                            if (saveCacheToDisk(currentCachePath)) {
+                                LOGD("KV cache saved after reset")
+                            }
+                        }
                         isInferenceOn = false
                         withContext(Dispatchers.Main) { onSuccess() }
                     } catch (e: CancellationException) {
@@ -262,7 +283,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                 !currentChat.isTask &&
                 currentCachePath != null
             ) {
-                if (instance.saveCache(currentCachePath)) {
+                if (saveCacheToDisk(currentCachePath)) {
                     LOGD("KV cache saved before unload")
                 } else {
                     LOGD("No clean KV cache to save before unload")
@@ -342,6 +363,23 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     if (currentChat != null) {
                         // Add response to database
                         appDB.addAssistantMessage(currentChat.id, response)
+
+                        // Persist every completed turn. Waiting until unload is
+                        // unsafe when the process is killed or crashes after the
+                        // response has already been written to the database.
+                        stateLock.withLock {
+                            val latestChat = chat
+                            val latestCachePath = cachePath
+                            if (isInstanceLoaded.get() &&
+                                latestChat?.id == currentChat.id &&
+                                !latestChat.isTask &&
+                                latestCachePath != null
+                            ) {
+                                if (saveCacheToDisk(latestCachePath)) {
+                                    LOGD("KV cache saved after response")
+                                }
+                            }
+                        }
                     }
 
                     withContext(Dispatchers.Main) {

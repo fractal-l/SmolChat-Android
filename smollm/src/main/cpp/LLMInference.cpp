@@ -3,8 +3,11 @@
 #include <android/log.h>
 #include <cstdio>
 #include <cstring>
+#include <fcntl.h>
 #include <iomanip>
 #include <iostream>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <utility>
 
 #define TAG "[SmolLMAndroid-Cpp]"
@@ -12,10 +15,23 @@
 #define LOGe(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 namespace {
-constexpr uint32_t kCacheMagic   = 0x534D4C43; // "SMLC"
-constexpr uint32_t kCacheVersion = 1;
-constexpr uint64_t kFnvOffset    = 1469598103934665603ULL;
-constexpr uint64_t kFnvPrime     = 1099511628211ULL;
+constexpr uint32_t kCacheMagic         = 0x534D4C43; // "SMLC"
+constexpr uint32_t kCacheVersion       = 2;
+constexpr uint32_t kLegacyCacheVersion = 1;
+constexpr uint64_t kFnvOffset          = 1469598103934665603ULL;
+constexpr uint64_t kFnvPrime           = 1099511628211ULL;
+
+struct CacheMetadata {
+    uint32_t                 version       = 0;
+    uint64_t                 generation    = 0;
+    uint64_t                 modelHash     = 0;
+    uint32_t                 contextSize   = 0;
+    uint64_t                 messageCount  = 0;
+    uint64_t                 tokenCount    = 0;
+    uint64_t                 savedHash     = 0;
+    uint64_t                 boundaryCount = 0;
+    std::map<size_t, size_t> boundaries;
+};
 
 uint64_t hashBytes(uint64_t hash, const void* data, size_t size) {
     const auto* bytes = static_cast<const uint8_t*>(data);
@@ -57,6 +73,88 @@ bool readU32(FILE* file, uint32_t& value) {
 
 bool readU64(FILE* file, uint64_t& value) {
     return fread(&value, sizeof(value), 1, file) == 1;
+}
+
+bool fileExists(const std::string& path) {
+    struct stat info {};
+    return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode);
+}
+
+bool cacheSlotExists(const std::string& statePath) {
+    return fileExists(statePath) && fileExists(statePath + ".meta");
+}
+
+bool syncFile(const std::string& path) {
+    const int fd = open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return false;
+    }
+    const bool ok = fsync(fd) == 0;
+    close(fd);
+    return ok;
+}
+
+void syncParentDirectory(const std::string& path) {
+    const size_t separator = path.find_last_of('/');
+    const std::string directory =
+        separator == std::string::npos ? "." : (separator == 0 ? "/" : path.substr(0, separator));
+    const int fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY);
+    if (fd < 0) {
+        return;
+    }
+    if (fsync(fd) != 0) {
+        LOGe("cache: unable to fsync directory %s", directory.c_str());
+    }
+    close(fd);
+}
+
+bool readCacheMetadata(const std::string& metaPath, CacheMetadata& metadata) {
+    FILE* file = fopen(metaPath.c_str(), "rb");
+    if (!file) {
+        return false;
+    }
+
+    uint32_t magic = 0;
+    bool ok = readU32(file, magic) && readU32(file, metadata.version);
+    if (ok && metadata.version == kCacheVersion) {
+        ok = readU64(file, metadata.generation);
+    }
+    ok = ok && readU64(file, metadata.modelHash) &&
+         readU32(file, metadata.contextSize) &&
+         readU64(file, metadata.messageCount) &&
+         readU64(file, metadata.tokenCount) &&
+         readU64(file, metadata.savedHash) &&
+         readU64(file, metadata.boundaryCount);
+
+    if (!ok || magic != kCacheMagic ||
+        (metadata.version != kCacheVersion &&
+         metadata.version != kLegacyCacheVersion) ||
+        metadata.boundaryCount > 100000) {
+        fclose(file);
+        return false;
+    }
+
+    bool boundariesOk = true;
+    for (uint64_t i = 0; i < metadata.boundaryCount; ++i) {
+        uint64_t savedMessageCount = 0;
+        uint64_t savedTokenCount   = 0;
+        if (!readU64(file, savedMessageCount) ||
+            !readU64(file, savedTokenCount) ||
+            savedMessageCount > metadata.messageCount ||
+            savedTokenCount > metadata.tokenCount) {
+            boundariesOk = false;
+            break;
+        }
+        metadata.boundaries[static_cast<size_t>(savedMessageCount)] =
+            static_cast<size_t>(savedTokenCount);
+    }
+    fclose(file);
+    return boundariesOk;
+}
+
+uint64_t readCacheGeneration(const std::string& metaPath) {
+    CacheMetadata metadata;
+    return readCacheMetadata(metaPath, metadata) ? metadata.generation : 0;
 }
 } // namespace
 
@@ -253,14 +351,52 @@ LLMInference::saveCache(const char *path) {
         return false;
     }
 
-    const std::string finalStatePath(path);
-    const std::string tempStatePath  = finalStatePath + ".tmp";
-    const std::string finalMetaPath  = finalStatePath + ".meta";
+    const std::string primaryStatePath(path);
+    const std::string primaryMetaPath  = primaryStatePath + ".meta";
+    const std::string backupStatePath  = primaryStatePath + ".bak";
+    const std::string backupMetaPath   = backupStatePath + ".meta";
+
+    const bool primaryComplete = cacheSlotExists(primaryStatePath);
+    const bool backupComplete  = cacheSlotExists(backupStatePath);
+
+    // Keep the only complete cache while writing the replacement into the
+    // other slot. When both slots are complete, replace the older generation.
+    std::string targetStatePath;
+    std::string otherStatePath;
+    if (!primaryComplete && backupComplete) {
+        targetStatePath = primaryStatePath;
+        otherStatePath  = backupStatePath;
+    } else if (primaryComplete && !backupComplete) {
+        targetStatePath = backupStatePath;
+        otherStatePath  = primaryStatePath;
+    } else if (!primaryComplete && !backupComplete) {
+        targetStatePath = primaryStatePath;
+        otherStatePath  = backupStatePath;
+    } else {
+        const uint64_t primaryGeneration = readCacheGeneration(primaryMetaPath);
+        const uint64_t backupGeneration  = readCacheGeneration(backupMetaPath);
+        if (primaryGeneration <= backupGeneration) {
+            targetStatePath = primaryStatePath;
+            otherStatePath  = backupStatePath;
+        } else {
+            targetStatePath = backupStatePath;
+            otherStatePath  = primaryStatePath;
+        }
+    }
+
+    const uint64_t generation =
+        std::max(readCacheGeneration(primaryMetaPath),
+                 readCacheGeneration(backupMetaPath)) + 1;
+    const std::string targetMetaPath = targetStatePath + ".meta";
+    const std::string tempStatePath  = targetStatePath + ".tmp";
     const std::string tempMetaPath   = tempStatePath + ".meta";
+
+    std::remove(tempStatePath.c_str());
+    std::remove(tempMetaPath.c_str());
 
     const size_t stateBytes = llama_state_seq_save_file(
         _ctx, tempStatePath.c_str(), 0, _kvTokens.data(), _kvTokens.size());
-    if (stateBytes == 0) {
+    if (stateBytes == 0 || !syncFile(tempStatePath)) {
         LOGe("saveCache: failed to write sequence state");
         std::remove(tempStatePath.c_str());
         return false;
@@ -277,6 +413,7 @@ LLMInference::saveCache(const char *path) {
     bool           ok =
         writeU32(file, kCacheMagic) &&
         writeU32(file, kCacheVersion) &&
+        writeU64(file, generation) &&
         writeU64(file, _modelHash) &&
         writeU32(file, llama_n_ctx(_ctx)) &&
         writeU64(file, static_cast<uint64_t>(_messages.size())) &&
@@ -293,24 +430,37 @@ LLMInference::saveCache(const char *path) {
     if (fclose(file) != 0) {
         ok = false;
     }
+    if (ok && !syncFile(tempMetaPath)) {
+        ok = false;
+    }
 
     if (ok) {
-        ok = std::rename(tempStatePath.c_str(), finalStatePath.c_str()) == 0;
+        ok = std::rename(tempStatePath.c_str(), targetStatePath.c_str()) == 0;
     }
     if (ok) {
-        ok = std::rename(tempMetaPath.c_str(), finalMetaPath.c_str()) == 0;
+        ok = std::rename(tempMetaPath.c_str(), targetMetaPath.c_str()) == 0;
     }
     if (!ok) {
         LOGe("saveCache: failed to finalize cache files");
         std::remove(tempStatePath.c_str());
         std::remove(tempMetaPath.c_str());
-        std::remove(finalStatePath.c_str());
-        std::remove(finalMetaPath.c_str());
+        // The other slot still holds the previous complete cache. Remove the
+        // partially installed target instead of deleting the valid slot.
+        std::remove(targetStatePath.c_str());
+        std::remove(targetMetaPath.c_str());
         return false;
     }
 
-    LOGi("saveCache: messages=%zu kv=%zu bytes=%zu", _messages.size(),
-         _kvTokens.size(), stateBytes);
+    syncParentDirectory(targetStatePath);
+
+    // Once the new generation is durable, the previous generation is no longer
+    // needed. Keeping only one slot at rest halves cache storage usage.
+    std::remove(otherStatePath.c_str());
+    std::remove((otherStatePath + ".meta").c_str());
+    syncParentDirectory(otherStatePath);
+
+    LOGi("saveCache: messages=%zu kv=%zu bytes=%zu generation=%llu", _messages.size(),
+         _kvTokens.size(), stateBytes, static_cast<unsigned long long>(generation));
     return true;
 }
 
@@ -320,84 +470,75 @@ LLMInference::restoreCache(const char *path) {
         return false;
     }
 
-    const std::string metaPath = std::string(path) + ".meta";
-    FILE             *file     = fopen(metaPath.c_str(), "rb");
-    if (!file) {
-        return false;
+    const std::string primaryStatePath(path);
+    const std::string backupStatePath = primaryStatePath + ".bak";
+
+    std::vector<std::pair<std::string, CacheMetadata>> candidates;
+    CacheMetadata primaryMetadata;
+    if (readCacheMetadata(primaryStatePath + ".meta", primaryMetadata) &&
+        cacheSlotExists(primaryStatePath)) {
+        candidates.emplace_back(primaryStatePath, std::move(primaryMetadata));
+    }
+    CacheMetadata backupMetadata;
+    if (readCacheMetadata(backupStatePath + ".meta", backupMetadata) &&
+        cacheSlotExists(backupStatePath)) {
+        candidates.emplace_back(backupStatePath, std::move(backupMetadata));
     }
 
-    uint32_t magic = 0, version = 0, contextSize = 0;
-    uint64_t modelHash = 0, messageCount = 0, tokenCount = 0, savedHash = 0,
-             boundaryCount = 0;
-    bool headerOk =
-        readU32(file, magic) &&
-        readU32(file, version) &&
-        readU64(file, modelHash) &&
-        readU32(file, contextSize) &&
-        readU64(file, messageCount) &&
-        readU64(file, tokenCount) &&
-        readU64(file, savedHash) &&
-        readU64(file, boundaryCount);
-    if (!headerOk || magic != kCacheMagic || version != kCacheVersion ||
-        modelHash != _modelHash || contextSize != llama_n_ctx(_ctx) ||
-        messageCount != static_cast<uint64_t>(_messages.size()) ||
-        tokenCount == 0 || tokenCount > llama_n_ctx(_ctx) ||
-        boundaryCount > 100000) {
-        fclose(file);
-        return false;
-    }
+    // If a crash happened after the new generation was committed but before the
+    // previous one was cleaned up, restore the newest valid generation first.
+    std::sort(candidates.begin(), candidates.end(),
+              [](const auto& lhs, const auto& rhs) {
+                  return lhs.second.generation > rhs.second.generation;
+              });
 
-    std::map<size_t, size_t> boundaries;
-    bool                     boundariesOk = true;
-    for (uint64_t i = 0; i < boundaryCount; ++i) {
-        uint64_t savedMessageCount = 0, savedTokenCount = 0;
-        if (!readU64(file, savedMessageCount) ||
-            !readU64(file, savedTokenCount) ||
-            savedMessageCount > messageCount ||
-            savedTokenCount > tokenCount) {
-            boundariesOk = false;
-            break;
+    for (auto& candidate : candidates) {
+        CacheMetadata& metadata = candidate.second;
+        if (metadata.modelHash != _modelHash ||
+            metadata.contextSize != llama_n_ctx(_ctx) ||
+            metadata.messageCount != static_cast<uint64_t>(_messages.size()) ||
+            metadata.tokenCount == 0 ||
+            metadata.tokenCount > llama_n_ctx(_ctx)) {
+            continue;
         }
-        boundaries[static_cast<size_t>(savedMessageCount)] =
-            static_cast<size_t>(savedTokenCount);
-    }
-    fclose(file);
-    if (!boundariesOk) {
-        return false;
-    }
 
-    _resetContext();
-
-    std::vector<llama_token> tokens(static_cast<size_t>(tokenCount));
-    size_t                   loadedTokenCount = 0;
-    const size_t             stateBytes       = llama_state_seq_load_file(
-        _ctx, path, 0, tokens.data(), tokens.size(), &loadedTokenCount);
-    if (stateBytes == 0 || loadedTokenCount != tokenCount ||
-        hashCache(tokens, boundaries) != savedHash) {
-        LOGe("restoreCache: cache validation failed");
         _resetContext();
-        return false;
+        std::vector<llama_token> tokens(static_cast<size_t>(metadata.tokenCount));
+        size_t                   loadedTokenCount = 0;
+        const size_t             stateBytes       = llama_state_seq_load_file(
+            _ctx, candidate.first.c_str(), 0, tokens.data(), tokens.size(),
+            &loadedTokenCount);
+        if (stateBytes == 0 || loadedTokenCount != metadata.tokenCount ||
+            hashCache(tokens, metadata.boundaries) != metadata.savedHash) {
+            LOGe("restoreCache: cache validation failed for %s",
+                 candidate.first.c_str());
+            _resetContext();
+            continue;
+        }
+
+        _kvTokens          = std::move(tokens);
+        _messageBoundaries = std::move(metadata.boundaries);
+        _lastPromptTokens.clear();
+        _promptTokens.clear();
+        _response.clear();
+        _cacheResponseTokens.clear();
+        _cacheValid        = true;
+        _lastResponseEmpty = false;
+        _batch             = llama_batch{};
+        _nCtxUsed =
+            llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
+        if (_nCtxUsed <= 0) {
+            _nCtxUsed = static_cast<int>(_kvTokens.size());
+        }
+        llama_sampler_reset(_sampler);
+
+        LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu generation=%llu",
+             _messages.size(), _kvTokens.size(), stateBytes,
+             static_cast<unsigned long long>(metadata.generation));
+        return true;
     }
 
-    _kvTokens          = std::move(tokens);
-    _messageBoundaries = std::move(boundaries);
-    _lastPromptTokens.clear();
-    _promptTokens.clear();
-    _response.clear();
-    _cacheResponseTokens.clear();
-    _cacheValid        = true;
-    _lastResponseEmpty = false;
-    _batch             = llama_batch{};
-    _nCtxUsed =
-        llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
-    if (_nCtxUsed <= 0) {
-        _nCtxUsed = static_cast<int>(_kvTokens.size());
-    }
-    llama_sampler_reset(_sampler);
-
-    LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu", _messages.size(),
-         _kvTokens.size(), stateBytes);
-    return true;
+    return false;
 }
 
 LLMInference::RenderedPrompt

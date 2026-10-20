@@ -69,6 +69,7 @@ private const val LOGTAG = "[SmolLMAndroid-Kt]"
 private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
 
 private val findThinkHtmlBlockRegex = Regex("<blockquote><i><h6>[\\s\\S]*?</i></h6></blockquote>")
+private val untitledChatNameRegex = Regex("^Untitled(?: \\d+)?$")
 internal fun String.stripThinkingForClipboard() = findThinkHtmlBlockRegex.replace(this, "").trim()
 
 sealed class ChatScreenUIEvent {
@@ -76,6 +77,8 @@ sealed class ChatScreenUIEvent {
         data class UpdateChatModel(val model: LLMModel) : ChatScreenUIEvent()
 
         data class UpdateModelChatTemplate(val model: LLMModel) : ChatScreenUIEvent()
+
+        data class RenameModel(val model: LLMModel) : ChatScreenUIEvent()
 
         data object LoadChatModel : ChatScreenUIEvent()
 
@@ -393,6 +396,36 @@ class ChatScreenViewModel(
                 Toast.makeText(
                         context,
                         context.getString(R.string.chat_model_template_saved),
+                        Toast.LENGTH_LONG,
+                    )
+                    .show()
+            }
+
+            is ChatScreenUIEvent.ChatEvents.RenameModel -> {
+                modelsRepository.updateModel(event.model)
+                _uiState.update { state ->
+                    state.copy(
+                        chat =
+                            if (state.chat.llmModelId == event.model.id) {
+                                state.chat.copy(llmModel = event.model)
+                            } else {
+                                state.chat
+                            },
+                        tasks =
+                            state.tasks
+                                .map { task ->
+                                    if (task.modelId == event.model.id) {
+                                        task.copy(modelName = event.model.name)
+                                    } else {
+                                        task
+                                    }
+                                }
+                                .toImmutableList(),
+                    )
+                }
+                Toast.makeText(
+                        context,
+                        context.getString(R.string.chat_model_rename_saved, event.model.name),
                         Toast.LENGTH_LONG,
                     )
                     .show()
@@ -793,8 +826,39 @@ class ChatScreenViewModel(
         )
     }
 
+    /**
+     * Replaces the generated "Untitled N" placeholder with a short title derived
+     * from the first user message. Chats that were already named by the user are
+     * left untouched.
+     */
+    private fun nameChatFromFirstMessage(chat: Chat, query: String): Chat {
+        if (chat.isTask || !untitledChatNameRegex.matches(chat.name)) {
+            return chat
+        }
+        val normalized = query.trim().replace(Regex("\\s+"), " ")
+        if (normalized.isBlank()) {
+            return chat
+        }
+        val title =
+            if (normalized.length > 60) {
+                normalized.take(60).trimEnd() + "…"
+            } else {
+                normalized
+            }
+        val namedChat = chat.copy(name = title)
+        _uiState.update { state ->
+            if (state.chat.id == namedChat.id) {
+                state.copy(chat = namedChat)
+            } else {
+                state
+            }
+        }
+        appDB.updateChat(namedChat)
+        return namedChat
+    }
+
     private fun sendUserQuery(query: String, addMessageToDB: Boolean = true) {
-        val chat = uiState.value.chat
+        var chat = uiState.value.chat
         // Update the 'dateUsed' attribute of the current Chat instance
         // when a query is sent by the user
         chat.dateUsed = Date()
@@ -808,6 +872,7 @@ class ChatScreenViewModel(
 
         if (addMessageToDB) {
             appDB.addUserMessage(chat.id, query)
+            chat = nameChatFromFirstMessage(chat, query)
         }
         _uiState.update { it.copy(isGeneratingResponse = true, renderedPartialResponse = null) }
         smolLMManager.getResponse(

@@ -117,23 +117,10 @@ private val darkScheme =
         surfaceContainerHighest = surfaceContainerHighestDark,
     )
 
-private val amoledScheme =
-    darkScheme.copy(
-        background = backgroundAmoled,
-        surface = surfaceAmoled,
-        surfaceDim = surfaceDimAmoled,
-        surfaceBright = surfaceBrightAmoled,
-        surfaceContainerLowest = surfaceContainerLowestAmoled,
-        surfaceContainerLow = surfaceContainerLowAmoled,
-        surfaceContainer = surfaceContainerAmoled,
-        surfaceContainerHigh = surfaceContainerHighAmoled,
-        surfaceContainerHighest = surfaceContainerHighestAmoled,
-    )
-
 @Composable
 fun SmolLMAndroidTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Use the system (Monet) palette on Android 12+ unless AMOLED is selected.
+    // Use the system (Monet) palette on Android 12+.
     dynamicColor: Boolean = true,
     content: @Composable() () -> Unit,
 ) {
@@ -152,11 +139,34 @@ fun SmolLMAndroidTheme(
             ThemeMode.DARK,
             ThemeMode.AMOLED -> true
         }
+    val context = LocalContext.current
     val colorScheme =
         when {
-            themeMode == ThemeMode.AMOLED -> amoledScheme
+            themeMode == ThemeMode.AMOLED -> {
+                // Keep the system's Monet accent colors but force OLED surfaces
+                // to pure/near black instead of the regular dark palette.
+                val baseDarkScheme =
+                    if (dynamicColor && !isPreview && Build.VERSION.SDK_INT >=
+                        Build.VERSION_CODES.S
+                    ) {
+                        dynamicDarkColorScheme(context)
+                    } else {
+                        darkScheme
+                    }
+                baseDarkScheme.copy(
+                    background = backgroundAmoled,
+                    surface = surfaceAmoled,
+                    surfaceDim = surfaceDimAmoled,
+                    surfaceBright = surfaceBrightAmoled,
+                    surfaceContainerLowest = surfaceContainerLowestAmoled,
+                    surfaceContainerLow = surfaceContainerLowAmoled,
+                    surfaceContainer = surfaceContainerAmoled,
+                    surfaceContainerHigh = surfaceContainerHighAmoled,
+                    surfaceContainerHighest = surfaceContainerHighestAmoled,
+                )
+            }
+
             dynamicColor && !isPreview && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-                val context = LocalContext.current
                 if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             }
 

@@ -162,6 +162,9 @@
     <string name="chat_model_template_label">Chat Template</string>
     <string name="chat_model_template_desc">The chat template is used by every chat with this model. Leave it empty to use the template embedded in the GGUF file.</string>
     <string name="chat_model_template_saved">Chat template saved</string>
+    <string name="chat_model_rename">Rename Model</string>
+    <string name="chat_model_rename_label">Model name</string>
+    <string name="chat_model_rename_saved">Model renamed to \'%1$s\'</string>
     <string name="settings_data">Chats</string>
     <string name="settings_data_desc">Back up all conversations to a JSON file, or restore them from a previous export. Imported chats are added to the current ones.</string>
     <string name="settings_export_chats">Export chats</string>
