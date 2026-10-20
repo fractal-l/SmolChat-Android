@@ -123,16 +123,47 @@ LLMInference::trimToMessageCount(size_t messageCount) {
         clearChat();
         return true;
     }
-    // Only assistant boundaries are safe: the cache then ends with a completed
-    // response and the next user turn can be appended normally.
-    if (!_cacheValid || strcmp(_messages[messageCount - 1].role, "assistant") != 0) {
+    if (!_cacheValid) {
         return false;
     }
-    auto boundaryIt = _messageBoundaries.find(messageCount);
-    if (boundaryIt == _messageBoundaries.end()) {
+    const char *lastRole = _messages[messageCount - 1].role;
+    size_t      boundary = 0;
+    if (strcmp(lastRole, "assistant") == 0) {
+        // The cache ends with the sampled assistant response. Use the boundary
+        // recorded when that turn started.
+        auto boundaryIt = _messageBoundaries.find(messageCount);
+        if (boundaryIt == _messageBoundaries.end()) {
+            return false;
+        }
+        boundary = boundaryIt->second;
+    } else if (strcmp(lastRole, "user") == 0) {
+        // Re-render the kept conversation without the assistant header and
+        // verify that it is an exact prefix of the cached tokens. This handles
+        // rolling back an assistant reply while keeping the user prefix.
+        try {
+            std::vector<common_chat_msg> keptMessages;
+            keptMessages.reserve(messageCount);
+            for (size_t i = 0; i < messageCount; ++i) {
+                common_chat_msg msg;
+                msg.role    = _messages[i].role;
+                msg.content = _messages[i].content;
+                keptMessages.push_back(std::move(msg));
+            }
+            RenderedPrompt keptRendered = _renderPrompt(keptMessages, false);
+            std::vector<llama_token> keptTokens = common_tokenize(
+                llama_model_get_vocab(_model), keptRendered.text, /*add_special=*/true,
+                /*parse_special=*/true);
+            if (keptTokens.empty() || keptTokens.size() > _kvTokens.size() ||
+                !std::equal(keptTokens.begin(), keptTokens.end(), _kvTokens.begin())) {
+                return false;
+            }
+            boundary = keptTokens.size();
+        } catch (...) {
+            return false;
+        }
+    } else {
         return false;
     }
-    const size_t boundary = boundaryIt->second;
     if (boundary == 0 || boundary > _kvTokens.size()) {
         return false;
     }
