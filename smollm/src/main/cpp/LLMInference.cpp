@@ -98,7 +98,7 @@ void syncParentDirectory(const std::string& path) {
     const size_t separator = path.find_last_of('/');
     const std::string directory =
         separator == std::string::npos ? "." : (separator == 0 ? "/" : path.substr(0, separator));
-    const int fd = open(directory.c_str(), O_RDONLY | O_DIRECTORY);
+    const int fd = open(directory.c_str(), O_RDONLY);
     if (fd < 0) {
         return;
     }
