@@ -595,6 +595,17 @@ LLMInference::startCompletion(const char *query) {
     }
     if (reuseLen == 0) {
         _resetContext();
+    } else if (skipUserTurn) {
+        // A skipped user turn extends the existing cache with an assistant
+        // header. Boundaries that still fall inside the reused prefix remain
+        // valid; drop only the ones in the replaced suffix.
+        for (auto it = _messageBoundaries.begin(); it != _messageBoundaries.end();) {
+            if (it->second > reuseLen) {
+                it = _messageBoundaries.erase(it);
+            } else {
+                ++it;
+            }
+        }
     } else {
         // The cache was rebuilt from the rendered prompt, so older boundaries
         // no longer map to the new token positions.
@@ -622,7 +633,7 @@ LLMInference::startCompletion(const char *query) {
     _batch = llama_batch{};
     _batch.token = _promptTokens.data();
     _batch.n_tokens = _promptTokens.size();
-    if (_storeChats) {
+    if (_storeChats && !skipUserTurn) {
         // Re-record the boundary before this user turn in the rebuilt cache so
         // repeated edits keep the fast path. Verify that rendering the base
         // conversation is an exact token prefix of the full prompt.
