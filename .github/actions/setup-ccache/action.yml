@@ -5,7 +5,7 @@ runs:
   using: composite
   steps:
     - name: Restore ccache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/ccache
         key: ccache-${{ runner.os }}-ndk-r27d-${{ hashFiles('smollm/src/main/cpp/**', 'smollm/build.gradle.kts', 'external/llama.cpp/CMakeLists.txt', 'external/llama.cpp/src/**', 'external/llama.cpp/common/**', 'external/llama.cpp/ggml/src/**', 'external/llama.cpp/include/**', 'external/cpu_features/**') }}

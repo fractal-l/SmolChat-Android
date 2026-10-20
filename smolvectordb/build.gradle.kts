@@ -6,10 +6,14 @@ plugins {
 android {
     namespace = "io.shubham0204.smolvectordb"
     compileSdk { version = release(36) }
-    ndkVersion = "27.2.12479018"
+    ndkVersion = "27.3.13750724"
 
     defaultConfig {
         minSdk = 24
+
+        providers.gradleProperty("targetAbi").orNull?.let { abi ->
+            ndk { abiFilters.add(abi) }
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
