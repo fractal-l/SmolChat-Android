@@ -531,6 +531,12 @@ fun EditChatSettingsScreen(
                     systemPrompt = preset.systemPrompt
                     temperature = preset.temperature
                     minP = preset.minP
+                    topK = preset.topK
+                    topP = preset.topP
+                    repeatPenalty = preset.repeatPenalty
+                    repeatLastN = preset.repeatLastN
+                    randomSeed = preset.seed < 0
+                    seedText = preset.seed.coerceAtLeast(0).toString()
                     showCharacterPresetsDialog = false
                 },
                 onDismissRequest = { showCharacterPresetsDialog = false },
@@ -559,11 +565,18 @@ private fun CharacterPresetsDialog(
                             supportingContent = {
                                 Text(
                                     text =
-                                        "temp %.2f · min-p %.2f".format(
-                                            preset.temperature,
-                                            preset.minP,
-                                        ),
-                                    maxLines = 1,
+                                        "temp %.2f · min-p %.2f · top-k %d · top-p %.2f · repeat %.2f/%d · seed %s"
+                                            .format(
+                                                preset.temperature,
+                                                preset.minP,
+                                                preset.topK,
+                                                preset.topP,
+                                                preset.repeatPenalty,
+                                                preset.repeatLastN,
+                                                if (preset.seed < 0) "random"
+                                                else preset.seed.toString(),
+                                            ),
+                                    maxLines = 2,
                                 )
                             },
                             modifier =

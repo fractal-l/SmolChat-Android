@@ -22,23 +22,9 @@ class CharacterPresetsStore(private val sharedPrefStore: SharedPrefStore) {
         }
     }
 
-    fun addPreset(
-        name: String,
-        systemPrompt: String,
-        temperature: Float,
-        minP: Float,
-    ) {
+    fun addPreset(preset: CharacterPreset) {
         val nextId = (_presets.value.maxOfOrNull { it.id } ?: 0L) + 1L
-        savePresets(
-            _presets.value +
-                CharacterPreset(
-                    id = nextId,
-                    name = name,
-                    systemPrompt = systemPrompt,
-                    temperature = temperature,
-                    minP = minP,
-                )
-        )
+        savePresets(_presets.value + preset.copy(id = nextId))
     }
 
     fun updatePreset(preset: CharacterPreset) {

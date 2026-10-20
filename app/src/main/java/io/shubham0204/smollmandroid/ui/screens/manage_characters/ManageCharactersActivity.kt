@@ -40,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -56,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -121,7 +124,7 @@ private fun PreviewCharactersScreenUI() {
                     minP = 0.05f,
                 )
             ),
-        onAddPreset = { _, _, _, _ -> },
+        onAddPreset = {},
         onUpdatePreset = {},
         onDeletePreset = {},
         onBack = {},
@@ -132,7 +135,7 @@ private fun PreviewCharactersScreenUI() {
 @Composable
 private fun CharactersScreenUI(
     presets: List<CharacterPreset>,
-    onAddPreset: (String, String, Float, Float) -> Unit,
+    onAddPreset: (CharacterPreset) -> Unit,
     onUpdatePreset: (CharacterPreset) -> Unit,
     onDeletePreset: (Long) -> Unit,
     onBack: () -> Unit,
@@ -192,7 +195,7 @@ private fun CharactersScreenUI(
                         icon = FeatherIcons.User,
                         title = stringResource(R.string.characters_empty),
                         description =
-                            "Characters bundle a system prompt with temperature and min-p settings.",
+                            "Characters bundle a system prompt with temperature, min-p, top-k, top-p, repeat, and seed settings.",
                         actionLabel = stringResource(R.string.characters_add),
                         onAction = {
                             editingPreset = null
@@ -238,12 +241,7 @@ private fun CharactersScreenUI(
                 onDismiss = { showEditor = false },
                 onSave = { preset ->
                     if (editingPreset == null) {
-                        onAddPreset(
-                            preset.name,
-                            preset.systemPrompt,
-                            preset.temperature,
-                            preset.minP,
-                        )
+                        onAddPreset(preset)
                     } else {
                         onUpdatePreset(preset)
                     }
@@ -254,6 +252,18 @@ private fun CharactersScreenUI(
         AppAlertDialog()
     }
 }
+
+private fun samplerSummary(preset: CharacterPreset): String =
+    "temp %.2f · min-p %.2f · top-k %d · top-p %.2f · repeat %.2f/%d · seed %s"
+        .format(
+            preset.temperature,
+            preset.minP,
+            preset.topK,
+            preset.topP,
+            preset.repeatPenalty,
+            preset.repeatLastN,
+            if (preset.seed < 0) "random" else preset.seed.toString(),
+        )
 
 @Composable
 private fun CharacterItem(
@@ -304,13 +314,11 @@ private fun CharacterItem(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text =
-                        "temp %.2f  ·  min-p %.2f".format(
-                            preset.temperature,
-                            preset.minP,
-                        ),
+                    text = samplerSummary(preset),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             IconButton(onClick = onEditClick) {
@@ -335,6 +343,14 @@ private fun CharacterPresetDialog(
         mutableFloatStateOf(initialPreset?.temperature ?: 0.8f)
     }
     var minP by remember { mutableFloatStateOf(initialPreset?.minP ?: 0.1f) }
+    var topK by remember { mutableIntStateOf(initialPreset?.topK ?: 40) }
+    var topP by remember { mutableFloatStateOf(initialPreset?.topP ?: 0.95f) }
+    var repeatPenalty by remember { mutableFloatStateOf(initialPreset?.repeatPenalty ?: 1.1f) }
+    var repeatLastN by remember { mutableIntStateOf(initialPreset?.repeatLastN ?: 64) }
+    var randomSeed by remember { mutableStateOf((initialPreset?.seed ?: -1) < 0) }
+    var seedText by remember {
+        mutableStateOf((initialPreset?.seed ?: -1).coerceAtLeast(0).toString())
+    }
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = MaterialTheme.shapes.extraLarge,
@@ -427,6 +443,84 @@ private fun CharacterPresetDialog(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = "Top-K", style = MaterialTheme.typography.titleSmall)
+                Slider(
+                    value = topK.toFloat(),
+                    onValueChange = { topK = it.toInt() },
+                    valueRange = 0.0f..100.0f,
+                    steps = 99,
+                )
+                Text(
+                    text = "$topK",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = "Top-P", style = MaterialTheme.typography.titleSmall)
+                Slider(
+                    value = topP,
+                    onValueChange = { topP = it },
+                    valueRange = 0.0f..1.0f,
+                    steps = 99,
+                )
+                Text(
+                    text = "%.2f".format(topP),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = "Repeat penalty", style = MaterialTheme.typography.titleSmall)
+                Slider(
+                    value = repeatPenalty,
+                    onValueChange = { repeatPenalty = it },
+                    valueRange = 1.0f..2.0f,
+                    steps = 99,
+                )
+                Text(
+                    text = "%.2f".format(repeatPenalty),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Repeat last N tokens",
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Slider(
+                    value = repeatLastN.toFloat(),
+                    onValueChange = { repeatLastN = it.toInt() },
+                    valueRange = 0.0f..512.0f,
+                    steps = 63,
+                )
+                Text(
+                    text = "$repeatLastN",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = "Seed", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = randomSeed,
+                        onCheckedChange = { randomSeed = it },
+                    )
+                    Text(
+                        text = "Random seed",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+                if (!randomSeed) {
+                    TextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = seedText,
+                        onValueChange = { seedText = it.filter(Char::isDigit).take(10) },
+                        label = { Text("Seed value") },
+                        singleLine = true,
+                        keyboardOptions =
+                            KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                    )
+                }
                 Spacer(modifier = Modifier.height(24.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -446,6 +540,16 @@ private fun CharacterPresetDialog(
                                     systemPrompt = systemPrompt,
                                     temperature = temperature,
                                     minP = minP,
+                                    topK = topK,
+                                    topP = topP,
+                                    repeatPenalty = repeatPenalty,
+                                    repeatLastN = repeatLastN,
+                                    seed =
+                                        if (randomSeed) {
+                                            -1
+                                        } else {
+                                            seedText.toIntOrNull() ?: -1
+                                        },
                                 )
                             )
                         },
