@@ -108,6 +108,58 @@ LLMInference::clearChat() {
     llama_sampler_reset(_sampler);
 }
 
+bool
+LLMInference::trimToMessageCount(size_t messageCount) {
+    if (!_storeChats) {
+        return false;
+    }
+    if (messageCount > _messages.size()) {
+        return false;
+    }
+    if (messageCount == _messages.size()) {
+        return true;
+    }
+    if (messageCount == 0) {
+        clearChat();
+        return true;
+    }
+    // Only assistant boundaries are safe: the cache then ends with a completed
+    // response and the next user turn can be appended normally.
+    if (!_cacheValid || strcmp(_messages[messageCount - 1].role, "assistant") != 0) {
+        return false;
+    }
+    auto boundaryIt = _messageBoundaries.find(messageCount);
+    if (boundaryIt == _messageBoundaries.end()) {
+        return false;
+    }
+    const size_t boundary = boundaryIt->second;
+    if (boundary == 0 || boundary > _kvTokens.size()) {
+        return false;
+    }
+    if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos) boundary, -1)) {
+        LOGi("trimToMessageCount: partial KV removal failed");
+        return false;
+    }
+    for (size_t i = messageCount; i < _messages.size(); ++i) {
+        free(const_cast<char *>(_messages[i].role));
+        free(const_cast<char *>(_messages[i].content));
+    }
+    _messages.resize(messageCount);
+    _kvTokens.resize(boundary);
+    // Force the token-prefix path on the next turn. The cache may contain
+    // sampled assistant tokens, so the rendered-prompt fast path is not valid.
+    _lastPromptTokens.clear();
+    _lastResponseEmpty = false;
+    _cacheValid         = true;
+    _nCtxUsed           = (int) boundary;
+    _response.clear();
+    _cacheResponseTokens.clear();
+    llama_sampler_reset(_sampler);
+    _messageBoundaries.erase(_messageBoundaries.upper_bound(messageCount), _messageBoundaries.end());
+    LOGi("trimToMessageCount: messages=%zu kv=%zu", messageCount, boundary);
+    return true;
+}
+
 LLMInference::RenderedPrompt
 LLMInference::_renderPrompt(bool addGenerationPrompt) {
     std::vector<common_chat_msg> messages;
@@ -155,6 +207,7 @@ LLMInference::_resetContext() {
     _response.clear();
     _cacheResponseTokens.clear();
     _nCtxUsed = 0;
+    _messageBoundaries.clear();
 }
 
 float
@@ -174,6 +227,10 @@ LLMInference::startCompletion(const char *query) {
     _responseNumTokens = 0;
     _response.clear();
     _cacheResponseTokens.clear();
+
+    if (_storeChats && _cacheValid) {
+        _messageBoundaries[_messages.size()] = _kvTokens.size();
+    }
 
     addChatMessage(query, "user");
 
@@ -264,6 +321,9 @@ LLMInference::startCompletion(const char *query) {
                 _batch = llama_batch{};
                 _batch.token = _promptTokens.data();
                 _batch.n_tokens = _promptTokens.size();
+                if (_storeChats) {
+                    _messageBoundaries[_messages.size()] = _kvTokens.size();
+                }
 
                 LOGi("startCompletion: suffix reuse, prompt=%zu kv=%zu decode=%zu, end=%zu user=%zu",
                      promptTokens.size(), kvSize, _promptTokens.size(),
@@ -292,6 +352,10 @@ LLMInference::startCompletion(const char *query) {
     }
     if (reuseLen == 0) {
         _resetContext();
+    } else {
+        // The cache was rebuilt from the rendered prompt, so older boundaries
+        // no longer map to the new token positions.
+        _messageBoundaries.clear();
     }
     // The cache is only reusable again once this turn completes cleanly.
     _cacheValid = false;
@@ -315,6 +379,30 @@ LLMInference::startCompletion(const char *query) {
     _batch = llama_batch{};
     _batch.token = _promptTokens.data();
     _batch.n_tokens = _promptTokens.size();
+    if (_storeChats) {
+        // Re-record the boundary before this user turn in the rebuilt cache so
+        // repeated edits keep the fast path. Verify that rendering the base
+        // conversation is an exact token prefix of the full prompt.
+        if (_messages.size() > 1) {
+            std::vector<common_chat_msg> baseMessages;
+            baseMessages.reserve(_messages.size() - 1);
+            for (size_t i = 0; i + 1 < _messages.size(); ++i) {
+                common_chat_msg msg;
+                msg.role    = _messages[i].role;
+                msg.content = _messages[i].content;
+                baseMessages.push_back(std::move(msg));
+            }
+            RenderedPrompt baseRendered = _renderPrompt(baseMessages, false);
+            std::vector<llama_token> baseTokens = common_tokenize(
+                llama_model_get_vocab(_model), baseRendered.text, /*add_special=*/true,
+                /*parse_special=*/true);
+            if (!baseTokens.empty() && baseTokens.size() < promptTokens.size() &&
+                std::equal(baseTokens.begin(), baseTokens.end(), promptTokens.begin())) {
+                _messageBoundaries[_messages.size() - 1] = baseTokens.size();
+            }
+        }
+        _messageBoundaries[_messages.size()] = _kvTokens.size();
+    }
 
     LOGi("startCompletion: prompt=%zu kv=%zu reuse=%zu decode=%zu",
          promptTokens.size(), kvSize, reuseLen, _promptTokens.size());
@@ -391,6 +479,7 @@ LLMInference::completionLoop() {
         _lastResponseEmpty = _response.empty();
         if (_storeChats) {
             _cacheValid = true;
+            _messageBoundaries[_messages.size()] = _kvTokens.size();
         }
         _response.clear();
         return "[EOG]";

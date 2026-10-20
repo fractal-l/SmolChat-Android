@@ -167,13 +167,20 @@ class SmolLMManager(private val appDB: AppDB) {
                         previousResetJob?.join()
                         previousResponseJob?.join()
                         isInferenceOn = true
-                        instance.clearChat()
                         this@SmolLMManager.chat = chat
-                        if (chat.systemPrompt.isNotEmpty()) {
-                            instance.addSystemPrompt(chat.systemPrompt)
-                        }
-                        if (!chat.isTask) {
-                            appDB.getMessagesForModel(chat.id).forEach { message ->
+                        val messages = if (chat.isTask) emptyList() else appDB.getMessagesForModel(chat.id)
+                        val messageCount =
+                            (if (chat.systemPrompt.isNotEmpty()) 1 else 0) + messages.size
+                        val trimmed = instance.trimToMessageCount(messageCount)
+                        if (trimmed) {
+                            LOGD("Chat trimmed to $messageCount messages, KV prefix kept")
+                        } else {
+                            LOGD("Chat trimmed unavailable, performing full context reset")
+                            instance.clearChat()
+                            if (chat.systemPrompt.isNotEmpty()) {
+                                instance.addSystemPrompt(chat.systemPrompt)
+                            }
+                            messages.forEach { message ->
                                 if (message.isUserMessage) {
                                     instance.addUserMessage(message.message)
                                 } else {

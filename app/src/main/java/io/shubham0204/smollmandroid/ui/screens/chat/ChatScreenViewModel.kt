@@ -433,7 +433,7 @@ class ChatScreenViewModel(
 
             is ChatScreenUIEvent.ChatEvents.OnMessageEdited -> {
                 // Remove the edited message (and anything after it) from the chat,
-                // reload the model so its context matches the updated conversation,
+                // rebuild the native conversation while keeping the model loaded,
                 // then send the new text as a fresh query. The query is added to the
                 // database exactly once by `sendUserQuery`.
                 rollbackMessagesFrom(event.chatId, event.oldMessage.id) {

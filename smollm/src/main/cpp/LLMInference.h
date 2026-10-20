@@ -2,6 +2,8 @@
 #include "chat.h"
 #include "common.h"
 #include "llama.h"
+#include <cstddef>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -33,6 +35,10 @@ class LLMInference {
     // Rendered prompt of the previous turn (before generation). Used to verify
     // that the conversation prefix did not change since the last turn.
     std::vector<llama_token> _lastPromptTokens;
+    // Clean turn boundaries mapped from message count to KV-token count. These
+    // allow an edit/rollback to keep the cached prefix instead of re-prefilling
+    // the whole conversation.
+    std::map<size_t, size_t> _messageBoundaries;
     // True only after a turn completed cleanly. A cancelled or failed turn
     // leaves it false so the next turn rebuilds the context from scratch.
     bool                     _cacheValid = false;
@@ -77,6 +83,10 @@ class LLMInference {
 
     // Clears all messages and KV-cache state without unloading the model.
     void clearChat();
+
+    // Drops messages after `messageCount` and truncates the KV cache to the
+    // matching clean turn boundary. Returns false when no safe boundary exists.
+    bool trimToMessageCount(size_t messageCount);
 
     float getResponseGenerationTime() const;
 

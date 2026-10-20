@@ -233,6 +233,15 @@ class SmolLM {
     }
 
     /**
+     * Drops messages after [messageCount] while preserving the cached KV prefix when the remaining
+     * conversation ends at a completed assistant turn. Returns false if a full reset is required.
+     */
+    fun trimToMessageCount(messageCount: Int): Boolean {
+        verifyHandle()
+        return trimToMessageCountNative(nativePtr, messageCount)
+    }
+
+    /**
      * Adds the assistant message for LLM inference An assistant message is the response given by
      * the LLM for a previous query in the conversation
      */
@@ -362,6 +371,8 @@ class SmolLM {
     private external fun close(modelPtr: Long)
 
     private external fun clearChatNative(modelPtr: Long)
+
+    private external fun trimToMessageCountNative(modelPtr: Long, messageCount: Int): Boolean
 
     // Returns true if Jinja template was used, false if legacy fallback was needed.
     private external fun startCompletion(modelPtr: Long, prompt: String): Boolean

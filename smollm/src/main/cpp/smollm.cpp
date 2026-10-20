@@ -46,6 +46,13 @@ Java_io_shubham0204_smollm_SmolLM_clearChatNative(JNIEnv* env, jobject thiz, jlo
     llmInference->clearChat();
 }
 
+extern "C" JNIEXPORT jboolean JNICALL
+Java_io_shubham0204_smollm_SmolLM_trimToMessageCountNative(JNIEnv* env, jobject thiz, jlong modelPtr,
+                                                           jint messageCount) {
+    auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    return llmInference->trimToMessageCount(static_cast<size_t>(messageCount)) ? JNI_TRUE : JNI_FALSE;
+}
+
 extern "C" JNIEXPORT jfloat JNICALL
 Java_io_shubham0204_smollm_SmolLM_getResponseGenerationSpeed(JNIEnv* env, jobject thiz, jlong modelPtr) {
     auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);
