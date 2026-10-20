@@ -42,8 +42,6 @@ import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -76,6 +74,7 @@ import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.FolderPlus
 import compose.icons.feathericons.List
 import compose.icons.feathericons.MessageCircle
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
 import compose.icons.feathericons.PlusSquare
@@ -299,7 +298,7 @@ private fun ChatsAndFoldersList(
             onClick = onManageTasksClick,
         )
         DrawerMenuItem(
-            icon = Icons.Default.RecordVoiceOver,
+            icon = FeatherIcons.Mic,
             label = "Manage Speech-to-Text",
             onClick = onManageASRClick,
         )

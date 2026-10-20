@@ -9,9 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +26,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.ArrowRight
+import compose.icons.feathericons.X
 import io.shubham0204.smollmandroid.R
 
 private var title = ""
@@ -77,7 +77,7 @@ fun TextFieldDialog() {
                         horizontalArrangement = Arrangement.SpaceAround,
                     ) {
                         OutlinedButton(onClick = { visible = false }) {
-                            Icon(Icons.Default.Close, contentDescription = null)
+                            Icon(FeatherIcons.X, contentDescription = null)
                             Text(stringResource(R.string.dialog_err_close))
                         }
                         Button(
@@ -91,7 +91,7 @@ fun TextFieldDialog() {
                                 }
                             }
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                            Icon(FeatherIcons.ArrowRight, contentDescription = null)
                             Text(buttonText)
                         }
                     }

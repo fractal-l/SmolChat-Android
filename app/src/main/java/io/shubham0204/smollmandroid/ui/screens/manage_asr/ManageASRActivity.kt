@@ -25,8 +25,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +51,7 @@ import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.Download
+import compose.icons.feathericons.Mic
 import compose.icons.feathericons.Play
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
 import io.shubham0204.smollmandroid.ui.components.PageIntro
@@ -116,7 +115,7 @@ class ManageASRActivity : ComponentActivity() {
                     PageIntro(
                         text =
                             "Turn spoken words into text in the chat composer. Everything runs locally on your device.",
-                        icon = Icons.Default.RecordVoiceOver,
+                        icon = FeatherIcons.Mic,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Card(
@@ -223,7 +222,7 @@ class ManageASRActivity : ComponentActivity() {
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
-                        imageVector = Icons.Default.RecordVoiceOver,
+                        imageVector = FeatherIcons.Mic,
                         contentDescription = null,
                         tint =
                             if (asrModel.isEnabled) {

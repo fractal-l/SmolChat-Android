@@ -63,6 +63,7 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             val releaseSigningConfig = signingConfigs.getByName("release")
             // Fall back to the debug key so forks and local builds can produce an APK without
@@ -88,7 +89,20 @@ android {
     }
     packaging {
         resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes +=
+                setOf(
+                    "/META-INF/{AL2.0,LGPL2.1}",
+                    "/META-INF/DEPENDENCIES",
+                    "/META-INF/INDEX.LIST",
+                    "/META-INF/LICENSE*",
+                    "/META-INF/NOTICE*",
+                    "/META-INF/*.version",
+                    "/META-INF/*.md",
+                    "/DebugProbesKt.bin",
+                )
+        }
+        jniLibs {
+            useLegacyPackaging = true
         }
     }
     applicationVariants.configureEach {
@@ -119,7 +133,6 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.material3.icons.extended)
     implementation(libs.androidx.compose.navigation)
 
     implementation(project(":smollm"))
@@ -129,7 +142,6 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.annotations)
     implementation(libs.koin.androidx.compose)
-    implementation(libs.androidx.ui.text.google.fonts)
     ksp(libs.koin.ksp.compiler)
 
     // compose-markdown: Markdown rendering in Compose

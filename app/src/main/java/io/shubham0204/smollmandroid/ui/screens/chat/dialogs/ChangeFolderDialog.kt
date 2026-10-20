@@ -11,9 +11,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -32,6 +29,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import compose.icons.FeatherIcons
+import compose.icons.feathericons.Folder
+import compose.icons.feathericons.X
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.Folder
 
@@ -102,9 +102,9 @@ fun ChangeFolderDialogUI(
                             Icon(
                                 imageVector =
                                     if (folder.id == -1L) {
-                                        Icons.Default.FolderOff
+                                        FeatherIcons.X
                                     } else {
-                                        Icons.Default.Folder
+                                        FeatherIcons.Folder
                                     },
                                 contentDescription = null,
                                 tint = MaterialTheme.colorScheme.primary,
