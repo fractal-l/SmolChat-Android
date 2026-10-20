@@ -143,6 +143,12 @@ class SmolLM {
      *   improve loading times and reduce memory usage. (Default: true)
      * @property useMlock Whether to lock the model in memory. This can prevent the model from being
      *   swapped out to disk, potentially improving performance. (Default: false)
+     * @property topK Keep only the K most likely tokens. 0 disables top-k. (Default: 40)
+     * @property topP Nucleus sampling probability. 1.0 disables top-p. (Default: 0.95)
+     * @property repeatPenalty Multiplicative repetition penalty. 1.0 disables it. (Default: 1.1)
+     * @property repeatLastN Number of recent tokens considered by the repetition penalty.
+     *   (Default: 64)
+     * @property seed Sampler seed. Use a negative value for a random seed. (Default: -1)
      */
     data class InferenceParams(
         val minP: Float = 0.1f,
@@ -153,6 +159,11 @@ class SmolLM {
         val numThreads: Int = 4,
         val useMmap: Boolean = true,
         val useMlock: Boolean = false,
+        val topK: Int = 40,
+        val topP: Float = 0.95f,
+        val repeatPenalty: Float = 1.1f,
+        val repeatLastN: Int = 64,
+        val seed: Int = -1,
     )
 
     /**
@@ -186,6 +197,11 @@ class SmolLM {
                     params.numThreads,
                     params.useMmap,
                     params.useMlock,
+                    params.topK,
+                    params.topP,
+                    params.repeatPenalty,
+                    params.repeatLastN,
+                    params.seed,
                 )
         }
 
@@ -205,6 +221,15 @@ class SmolLM {
     fun addSystemPrompt(prompt: String) {
         verifyHandle()
         addChatMessage(nativePtr, prompt, "system")
+    }
+
+    /**
+     * Clears the conversation history and KV cache while keeping the model and sampler loaded.
+     * Use this after editing or rolling back messages instead of closing and reloading the model.
+     */
+    fun clearChat() {
+        verifyHandle()
+        clearChatNative(nativePtr)
     }
 
     /**
@@ -321,6 +346,11 @@ class SmolLM {
         nThreads: Int,
         useMmap: Boolean,
         useMlock: Boolean,
+        topK: Int,
+        topP: Float,
+        repeatPenalty: Float,
+        repeatLastN: Int,
+        seed: Int,
     ): Long
 
     private external fun addChatMessage(modelPtr: Long, message: String, role: String)
@@ -330,6 +360,8 @@ class SmolLM {
     private external fun getContextSizeUsed(modelPtr: Long): Int
 
     private external fun close(modelPtr: Long)
+
+    private external fun clearChatNative(modelPtr: Long)
 
     // Returns true if Jinja template was used, false if legacy fallback was needed.
     private external fun startCompletion(modelPtr: Long, prompt: String): Boolean

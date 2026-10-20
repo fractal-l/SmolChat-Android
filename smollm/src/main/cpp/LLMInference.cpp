@@ -12,18 +12,25 @@
 
 void
 LLMInference::loadModel(const char *model_path, float minP, float temperature, bool storeChats, long contextSize,
-                        const char *chatTemplate, int nThreads, bool useMmap, bool useMlock) {
+                        const char *chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
+                        float repeatPenalty, int repeatLastN, int seed) {
     LOGi("loading model with"
          "\n\tmodel_path = %s"
          "\n\tminP = %f"
          "\n\ttemperature = %f"
+         "\n\ttopK = %d"
+         "\n\ttopP = %f"
+         "\n\trepeatPenalty = %f"
+         "\n\trepeatLastN = %d"
+         "\n\tseed = %d"
          "\n\tstoreChats = %d"
          "\n\tcontextSize = %li"
          "\n\tchatTemplate = %s"
          "\n\tnThreads = %d"
          "\n\tuseMmap = %d"
          "\n\tuseMlock = %d",
-         model_path, minP, temperature, storeChats, contextSize, chatTemplate, nThreads, useMmap, useMlock);
+         model_path, minP, temperature, topK, topP, repeatPenalty, repeatLastN, seed, storeChats, contextSize,
+         chatTemplate, nThreads, useMmap, useMlock);
 
     // load dynamic backends
     ggml_backend_load_all();
@@ -54,8 +61,18 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
     llama_sampler_chain_params sampler_params = llama_sampler_chain_default_params();
     sampler_params.no_perf = true; // disable performance metrics
     _sampler = llama_sampler_chain_init(sampler_params);
+    llama_sampler_chain_add(
+        _sampler,
+        llama_sampler_init_penalties(repeatLastN, repeatPenalty, 0.0f, 0.0f)
+    );
+    llama_sampler_chain_add(_sampler, llama_sampler_init_top_k(topK));
+    llama_sampler_chain_add(_sampler, llama_sampler_init_top_p(topP, 1));
+    llama_sampler_chain_add(_sampler, llama_sampler_init_min_p(minP, 1));
     llama_sampler_chain_add(_sampler, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(_sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    llama_sampler_chain_add(
+        _sampler,
+        llama_sampler_init_dist(static_cast<uint32_t>(seed))
+    );
 
     _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
     _messages.clear();
@@ -78,6 +95,17 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
 void
 LLMInference::addChatMessage(const char *message, const char *role) {
     _messages.push_back({strdup(role), strdup(message)});
+}
+
+void
+LLMInference::clearChat() {
+    for (llama_chat_message &message : _messages) {
+        free(const_cast<char *>(message.role));
+        free(const_cast<char *>(message.content));
+    }
+    _messages.clear();
+    _resetContext();
+    llama_sampler_reset(_sampler);
 }
 
 LLMInference::RenderedPrompt
@@ -126,6 +154,7 @@ LLMInference::_resetContext() {
     _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
+    _nCtxUsed = 0;
 }
 
 float

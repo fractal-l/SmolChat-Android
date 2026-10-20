@@ -133,8 +133,8 @@ private val amoledScheme =
 @Composable
 fun SmolLMAndroidTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = false,
+    // Use the system (Monet) palette on Android 12+ unless AMOLED is selected.
+    dynamicColor: Boolean = true,
     content: @Composable() () -> Unit,
 ) {
     // Previews do not start Koin, so fall back to the system theme there.
@@ -154,12 +154,12 @@ fun SmolLMAndroidTheme(
         }
     val colorScheme =
         when {
-            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+            themeMode == ThemeMode.AMOLED -> amoledScheme
+            dynamicColor && !isPreview && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
                 val context = LocalContext.current
                 if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             }
 
-            themeMode == ThemeMode.AMOLED -> amoledScheme
             isDark -> darkScheme
             else -> lightScheme
         }

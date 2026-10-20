@@ -233,16 +233,22 @@ class ChatScreenViewModel(
                 chat,
                 model.path,
                 SmolLM.InferenceParams(
-                    chat.minP,
-                    chat.temperature,
-                    !chat.isTask,
-                    chat.contextSize.toLong(),
-                    resolveChatTemplate(model, chat).takeIf {
-                        it.isNotBlank() && ("{%" in it || "{{" in it)
-                    },
-                    chat.nThreads,
-                    chat.useMmap,
-                    chat.useMlock,
+                    minP = chat.minP,
+                    temperature = chat.temperature,
+                    storeChats = !chat.isTask,
+                    contextSize = chat.contextSize.toLong(),
+                    chatTemplate =
+                        resolveChatTemplate(model, chat).takeIf {
+                            it.isNotBlank() && ("{%" in it || "{{" in it)
+                        },
+                    numThreads = chat.nThreads,
+                    useMmap = chat.useMmap,
+                    useMlock = chat.useMlock,
+                    topK = chat.topK,
+                    topP = chat.topP,
+                    repeatPenalty = chat.repeatPenalty,
+                    repeatLastN = chat.repeatLastN,
+                    seed = chat.seed,
                 ),
                 onError = { e ->
                     _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }
@@ -476,18 +482,27 @@ class ChatScreenViewModel(
                     dialogNegativeButtonText = context.getString(R.string.dialog_neg_cancel),
                     onPositiveButtonClick = {
                         deleteChatMessages(event.chat)
-                        unloadModel()
-                        loadModel(
-                            onComplete = {
-                                if (it == ModelLoadingState.SUCCESS) {
-                                    Toast.makeText(
-                                        context,
-                                        "Chat '${event.chat.name}' cleared",
-                                        Toast.LENGTH_LONG,
-                                    )
-                                        .show()
-                                }
-                            }
+                        val showClearedToast = {
+                            Toast.makeText(
+                                    context,
+                                    "Chat '${event.chat.name}' cleared",
+                                    Toast.LENGTH_LONG,
+                                )
+                                .show()
+                        }
+                        smolLMManager.resetChat(
+                            chat = event.chat,
+                            onError = {
+                                unloadModel()
+                                loadModel(
+                                    onComplete = {
+                                        if (it == ModelLoadingState.SUCCESS) {
+                                            showClearedToast()
+                                        }
+                                    }
+                                )
+                            },
+                            onSuccess = showClearedToast,
                         )
                     },
                     onNegativeButtonClick = {},
@@ -738,12 +753,9 @@ class ChatScreenViewModel(
     }
 
     /**
-     * Deletes the message with the given id and every message after it in the chat, then reloads
-     * the model so its context reflects the updated conversation. When the model is reloaded
-     * successfully, [onReloadComplete] is invoked (e.g. to resend an edited message).
-     *
-     * Note: there is no native API to edit/remove individual conversation messages, so the model
-     * must be unloaded and loaded again for the changes to take effect.
+     * Deletes the message with the given id and every message after it in the chat, then rebuilds
+     * the native conversation from the remaining messages. The model itself stays loaded, so
+     * rollback/edit does not pay the model-loading cost again.
      */
     private fun rollbackMessagesFrom(
         chatId: Long,
@@ -755,13 +767,20 @@ class ChatScreenViewModel(
             .filter { it.chatId == chatId && it.id >= messageId }
             .forEach { renderedMessageCache.remove(it.id) }
         appDB.deleteMessagesFrom(chatId, messageId)
-        unloadModel()
-        loadModel(
-            onComplete = {
-                if (it == ModelLoadingState.SUCCESS) {
-                    onReloadComplete()
-                }
-            }
+        val chat = _uiState.value.chat
+        smolLMManager.resetChat(
+            chat = chat,
+            onError = {
+                unloadModel()
+                loadModel(
+                    onComplete = {
+                        if (it == ModelLoadingState.SUCCESS) {
+                            onReloadComplete()
+                        }
+                    }
+                )
+            },
+            onSuccess = onReloadComplete,
         )
     }
 

@@ -53,6 +53,9 @@ class SmolLMManager(private val appDB: AppDB) {
     private var modelInitJob: Job? = null
 
     @Volatile
+    private var resetChatJob: Job? = null
+
+    @Volatile
     private var chat: Chat? = null
 
     // Use java.util.concurrent.atomic for better thread safety
@@ -81,8 +84,10 @@ class SmolLMManager(private val appDB: AppDB) {
             // Cancel any in-flight generation/load before replacing the native model
             val previousLoadJob = modelInitJob
             val previousResponseJob = responseGenerationJob
+            val previousResetJob = resetChatJob
             previousLoadJob?.cancel()
             previousResponseJob?.cancel()
+            previousResetJob?.cancel()
             isInstanceLoaded.set(false)
 
             try {
@@ -93,6 +98,7 @@ class SmolLMManager(private val appDB: AppDB) {
                         // no longer in use when it is closed below.
                         previousResponseJob?.join()
                         previousLoadJob?.join()
+                        previousResetJob?.join()
                         // Release the previous model. Without this the native
                         // pointer is overwritten on every chat/model switch and
                         // the old model's memory is leaked.
@@ -138,11 +144,63 @@ class SmolLMManager(private val appDB: AppDB) {
         }
     }
 
+    /**
+     * Rebuilds the native conversation from persisted messages without closing/reloading the model.
+     * Used after editing or rolling back messages.
+     */
+    fun resetChat(
+        chat: Chat,
+        onError: (Exception) -> Unit,
+        onSuccess: () -> Unit,
+    ) {
+        stateLock.withLock {
+            if (!isInstanceLoaded.get()) {
+                onError(IllegalStateException("Model not loaded"))
+                return
+            }
+            val previousResponseJob = responseGenerationJob
+            previousResponseJob?.cancel()
+            val previousResetJob = resetChatJob
+            resetChatJob =
+                CoroutineScope(Dispatchers.Default).launch {
+                    try {
+                        previousResetJob?.join()
+                        previousResponseJob?.join()
+                        isInferenceOn = true
+                        instance.clearChat()
+                        this@SmolLMManager.chat = chat
+                        if (chat.systemPrompt.isNotEmpty()) {
+                            instance.addSystemPrompt(chat.systemPrompt)
+                        }
+                        if (!chat.isTask) {
+                            appDB.getMessagesForModel(chat.id).forEach { message ->
+                                if (message.isUserMessage) {
+                                    instance.addUserMessage(message.message)
+                                } else {
+                                    instance.addAssistantMessage(message.message)
+                                }
+                            }
+                        }
+                        isInferenceOn = false
+                        withContext(Dispatchers.Main) { onSuccess() }
+                    } catch (e: CancellationException) {
+                        isInferenceOn = false
+                        throw e
+                    } catch (e: Exception) {
+                        isInferenceOn = false
+                        LOGD("Error resetting chat: ${e.message}")
+                        withContext(Dispatchers.Main) { onError(e) }
+                    }
+                }
+        }
+    }
+
     fun unload() {
         stateLock.withLock {
             // Cancel jobs
             responseGenerationJob.safeCancelJobIfActive()
             modelInitJob.safeCancelJobIfActive()
+            resetChatJob.safeCancelJobIfActive()
 
             isInstanceLoaded.set(false)
             chat = null
@@ -180,6 +238,7 @@ class SmolLMManager(private val appDB: AppDB) {
             responseGenerationJob = CoroutineScope(Dispatchers.Default).launch {
                 try {
                     previousResponseJob?.join()
+                    resetChatJob?.join()
                     isInferenceOn = true
                     val responseBuilder = StringBuilder()
                     var lastDispatchedResponse = ""

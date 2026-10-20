@@ -82,6 +82,11 @@ data class EditableChatSettings(
     val systemPrompt: String,
     val minP: Float,
     val temperature: Float,
+    val topK: Int,
+    val topP: Float,
+    val repeatPenalty: Float,
+    val repeatLastN: Int,
+    val seed: Int,
     val contextSize: Int,
     val nThreads: Int,
     val useMmap: Boolean,
@@ -95,6 +100,11 @@ data class EditableChatSettings(
                 systemPrompt = chat.systemPrompt,
                 minP = chat.minP,
                 temperature = chat.temperature,
+                topK = chat.topK,
+                topP = chat.topP,
+                repeatPenalty = chat.repeatPenalty,
+                repeatLastN = chat.repeatLastN,
+                seed = chat.seed,
                 contextSize = chat.contextSize,
                 nThreads = chat.nThreads,
                 useMmap = chat.useMmap,
@@ -109,6 +119,11 @@ data class EditableChatSettings(
         existingChat.systemPrompt = systemPrompt
         existingChat.minP = minP
         existingChat.temperature = temperature
+        existingChat.topK = topK
+        existingChat.topP = topP
+        existingChat.repeatPenalty = repeatPenalty
+        existingChat.repeatLastN = repeatLastN
+        existingChat.seed = seed
         existingChat.contextSize = contextSize
         existingChat.nThreads = nThreads
         existingChat.useMmap = useMmap
@@ -148,6 +163,12 @@ fun EditChatSettingsScreen(
     var systemPrompt by remember { mutableStateOf(settings.systemPrompt) }
     var minP by remember { mutableFloatStateOf(settings.minP) }
     var temperature by remember { mutableFloatStateOf(settings.temperature) }
+    var topK by remember { mutableIntStateOf(settings.topK) }
+    var topP by remember { mutableFloatStateOf(settings.topP) }
+    var repeatPenalty by remember { mutableFloatStateOf(settings.repeatPenalty) }
+    var repeatLastN by remember { mutableIntStateOf(settings.repeatLastN) }
+    var randomSeed by remember { mutableStateOf(settings.seed < 0) }
+    var seedText by remember { mutableStateOf(settings.seed.coerceAtLeast(0).toString()) }
     var contextSize by remember { mutableIntStateOf(settings.contextSize) }
     var nThreads by remember { mutableIntStateOf(settings.nThreads) }
     var takeContextSizeFromModel by remember { mutableStateOf(false) }
@@ -180,6 +201,16 @@ fun EditChatSettingsScreen(
                                         systemPrompt = systemPrompt,
                                         minP = minP,
                                         temperature = temperature,
+                                        topK = topK,
+                                        topP = topP,
+                                        repeatPenalty = repeatPenalty,
+                                        repeatLastN = repeatLastN,
+                                        seed =
+                                            if (randomSeed) {
+                                                -1
+                                            } else {
+                                                seedText.toIntOrNull() ?: -1
+                                            },
                                         contextSize = contextSize,
                                         nThreads = nThreads,
                                         useMmap = useMmap,
@@ -302,6 +333,105 @@ fun EditChatSettingsScreen(
                     steps = 50,
                 )
                 Text(text = "%.1f".format(temperature), style = MaterialTheme.typography.labelSmall)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(text = "Top-K", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text =
+                        "Keep only the K most likely tokens during sampling. Set to 0 to disable top-K.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = topK.toFloat(),
+                    onValueChange = { topK = it.toInt() },
+                    valueRange = 0.0f..100.0f,
+                    steps = 99,
+                )
+                Text(text = "$topK", style = MaterialTheme.typography.labelSmall)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(text = "Top-P", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text =
+                        "Nucleus sampling keeps the smallest set of tokens whose combined probability reaches Top-P.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = topP,
+                    onValueChange = { topP = it },
+                    valueRange = 0.0f..1.0f,
+                    steps = 99,
+                )
+                Text(text = "%.2f".format(topP), style = MaterialTheme.typography.labelSmall)
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(text = "Repeat penalty", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text =
+                        "Penalizes recently used tokens to reduce repetition. 1.00 disables the penalty.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = repeatPenalty,
+                    onValueChange = { repeatPenalty = it },
+                    valueRange = 1.0f..2.0f,
+                    steps = 99,
+                )
+                Text(
+                    text = "%.2f".format(repeatPenalty),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(text = "Repeat last N tokens", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "Number of recent tokens considered by the repeat penalty.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = repeatLastN.toFloat(),
+                    onValueChange = { repeatLastN = it.toInt() },
+                    valueRange = 0.0f..512.0f,
+                    steps = 63,
+                )
+                Text(
+                    text = "$repeatLastN tokens",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text(text = "Seed", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text =
+                        "A fixed seed makes sampling reproducible. Use a random seed to get different responses.",
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = randomSeed,
+                        onCheckedChange = { randomSeed = it },
+                    )
+                    Text(
+                        text = "Random seed",
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+                if (!randomSeed) {
+                    TextField(
+                        modifier = Modifier.fillMaxWidth(),
+                        value = seedText,
+                        onValueChange = { seedText = it.filter(Char::isDigit).take(10) },
+                        label = { Text("Seed value") },
+                        singleLine = true,
+                        keyboardOptions =
+                            KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 

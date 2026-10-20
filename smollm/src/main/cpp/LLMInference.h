@@ -68,11 +68,15 @@ class LLMInference {
 
   public:
     void loadModel(const char* modelPath, float minP, float temperature, bool storeChats, long contextSize,
-                   const char* chatTemplate, int nThreads, bool useMmap, bool useMlock);
+                   const char* chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
+                   float repeatPenalty, int repeatLastN, int seed);
 
     std::string benchModel(int pp, int tg, int pl, int nr);
 
     void addChatMessage(const char* message, const char* role);
+
+    // Clears all messages and KV-cache state without unloading the model.
+    void clearChat();
 
     float getResponseGenerationTime() const;
 

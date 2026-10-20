@@ -5,7 +5,9 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.room.withTransaction
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
@@ -14,7 +16,7 @@ import java.util.Date
 
 @Database(
     entities = [Chat::class, ChatMessage::class, LLMModel::class, Task::class, Folder::class],
-    version = 1,
+    version = 2,
 )
 @TypeConverters(Converters::class)
 abstract class AppRoomDatabase : RoomDatabase() {
@@ -27,12 +29,29 @@ abstract class AppRoomDatabase : RoomDatabase() {
     abstract fun taskDao(): TaskDao
 
     abstract fun folderDao(): FolderDao
+
+    companion object {
+        val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE Chat ADD COLUMN topK INTEGER NOT NULL DEFAULT 40")
+                    db.execSQL("ALTER TABLE Chat ADD COLUMN topP REAL NOT NULL DEFAULT 0.95")
+                    db.execSQL(
+                        "ALTER TABLE Chat ADD COLUMN repeatPenalty REAL NOT NULL DEFAULT 1.1"
+                    )
+                    db.execSQL("ALTER TABLE Chat ADD COLUMN repeatLastN INTEGER NOT NULL DEFAULT 64")
+                    db.execSQL("ALTER TABLE Chat ADD COLUMN seed INTEGER NOT NULL DEFAULT -1")
+                }
+            }
+    }
 }
 
 @Single
 class AppDB(context: Context) {
     private val db =
-        Room.databaseBuilder(context, AppRoomDatabase::class.java, "app-database").build()
+        Room.databaseBuilder(context, AppRoomDatabase::class.java, "app-database")
+            .addMigrations(AppRoomDatabase.MIGRATION_1_2)
+            .build()
 
     /** Get all chats from the database sorted by dateUsed in descending order. */
     fun getChats(): Flow<List<Chat>> = db.chatsDao().getChats()
@@ -217,6 +236,11 @@ class AppDB(context: Context) {
                             dateUsed = chat.dateUsed.time,
                             minP = chat.minP,
                             temperature = chat.temperature,
+                            topK = chat.topK,
+                            topP = chat.topP,
+                            repeatPenalty = chat.repeatPenalty,
+                            repeatLastN = chat.repeatLastN,
+                            seed = chat.seed,
                             nThreads = chat.nThreads,
                             useMmap = chat.useMmap,
                             useMlock = chat.useMlock,
@@ -272,6 +296,11 @@ class AppDB(context: Context) {
                                     llmModelId = -1L,
                                     minP = archivedChat.minP,
                                     temperature = archivedChat.temperature,
+                                    topK = archivedChat.topK,
+                                    topP = archivedChat.topP,
+                                    repeatPenalty = archivedChat.repeatPenalty,
+                                    repeatLastN = archivedChat.repeatLastN,
+                                    seed = archivedChat.seed,
                                     nThreads = archivedChat.nThreads,
                                     useMmap = archivedChat.useMmap,
                                     useMlock = archivedChat.useMlock,

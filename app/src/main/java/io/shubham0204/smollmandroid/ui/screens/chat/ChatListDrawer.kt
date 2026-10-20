@@ -44,6 +44,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -183,6 +184,11 @@ fun DrawerUI(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
+                    colors =
+                        ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
                 ) {
                     Icon(
                         FeatherIcons.Plus,
@@ -204,6 +210,11 @@ fun DrawerUI(
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
+                    colors =
+                        ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        ),
                 ) {
                     Icon(
                         FeatherIcons.PlusSquare,
@@ -380,7 +391,7 @@ private fun LazyItemScope.ChatListItem(
                 .clip(RoundedCornerShape(14.dp))
                 .background(
                     if (isCurrentlySelected) {
-                        MaterialTheme.colorScheme.secondaryContainer
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)
                     } else {
                         Color.Transparent
                     }
@@ -397,7 +408,7 @@ private fun LazyItemScope.ChatListItem(
                     .clip(CircleShape)
                     .background(
                         if (isCurrentlySelected) {
-                            MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.12f)
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
                         } else {
                             MaterialTheme.colorScheme.surfaceContainerHigh
                         }
@@ -412,12 +423,7 @@ private fun LazyItemScope.ChatListItem(
                         FeatherIcons.MessageCircle
                     },
                 contentDescription = null,
-                tint =
-                    if (isCurrentlySelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(17.dp),
             )
         }

@@ -4,7 +4,9 @@
 extern "C" JNIEXPORT jlong JNICALL
 Java_io_shubham0204_smollm_SmolLM_loadModel(JNIEnv* env, jobject thiz, jstring modelPath, jfloat minP,
                                             jfloat temperature, jboolean storeChats, jlong contextSize,
-                                            jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock) {
+                                            jstring chatTemplate, jint nThreads, jboolean useMmap, jboolean useMlock,
+                                            jint topK, jfloat topP, jfloat repeatPenalty, jint repeatLastN,
+                                            jint seed) {
     jboolean    isCopy           = true;
     const char* modelPathCstr    = env->GetStringUTFChars(modelPath, &isCopy);
     auto*       llmInference     = new LLMInference();
@@ -12,7 +14,7 @@ Java_io_shubham0204_smollm_SmolLM_loadModel(JNIEnv* env, jobject thiz, jstring m
 
     try {
         llmInference->loadModel(modelPathCstr, minP, temperature, storeChats, contextSize, chatTemplateCstr, nThreads,
-                                useMmap, useMlock);
+                                useMmap, useMlock, topK, topP, repeatPenalty, repeatLastN, seed);
     } catch (std::exception& error) {
         env->ReleaseStringUTFChars(modelPath, modelPathCstr);
         env->ReleaseStringUTFChars(chatTemplate, chatTemplateCstr);
@@ -36,6 +38,12 @@ Java_io_shubham0204_smollm_SmolLM_addChatMessage(JNIEnv* env, jobject thiz, jlon
     llmInference->addChatMessage(messageCstr, roleCstr);
     env->ReleaseStringUTFChars(message, messageCstr);
     env->ReleaseStringUTFChars(role, roleCstr);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_io_shubham0204_smollm_SmolLM_clearChatNative(JNIEnv* env, jobject thiz, jlong modelPtr) {
+    auto* llmInference = reinterpret_cast<LLMInference*>(modelPtr);
+    llmInference->clearChat();
 }
 
 extern "C" JNIEXPORT jfloat JNICALL

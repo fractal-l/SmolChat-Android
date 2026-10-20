@@ -18,6 +18,7 @@ package io.shubham0204.smollmandroid.data
 
 import android.util.Log
 import androidx.compose.runtime.Stable
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Ignore
@@ -77,6 +78,11 @@ data class Chat(
     /** LLM inference parameters that are used for this chat. */
     var minP: Float = 0.1f,
     var temperature: Float = 0.8f,
+    @ColumnInfo(defaultValue = "40") var topK: Int = 40,
+    @ColumnInfo(defaultValue = "0.95") var topP: Float = 0.95f,
+    @ColumnInfo(defaultValue = "1.1") var repeatPenalty: Float = 1.1f,
+    @ColumnInfo(defaultValue = "64") var repeatLastN: Int = 64,
+    @ColumnInfo(defaultValue = "-1") var seed: Int = -1,
     var nThreads: Int = 4,
     var useMmap: Boolean = true,
     var useMlock: Boolean = false,
