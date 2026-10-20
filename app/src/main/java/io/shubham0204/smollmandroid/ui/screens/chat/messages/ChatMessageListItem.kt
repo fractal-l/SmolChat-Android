@@ -4,6 +4,11 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -36,6 +41,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
@@ -218,6 +227,46 @@ private fun LLMMessageListItem(
     responseGenerationSpeed: Float?,
     responseGenerationTimeSecs: Int?,
 ) {
+    val shimmerColor = MaterialTheme.colorScheme.primary
+    val streamingShimmer =
+        if (isStreaming) {
+            val transition = rememberInfiniteTransition(label = "streaming_shimmer")
+            val shimmer by
+                transition.animateFloat(
+                    initialValue = 0f,
+                    targetValue = 1f,
+                    animationSpec =
+                        infiniteRepeatable(
+                            animation = tween(durationMillis = 1200, easing = LinearEasing)
+                        ),
+                    label = "streaming_shimmer_offset",
+                )
+            Modifier.drawWithContent {
+                drawContent()
+                val inset = 14.dp.toPx()
+                val barHeight = 2.dp.toPx()
+                val gradientWidth = (size.width - inset * 2f) * 0.55f
+                val startX = -gradientWidth + shimmer * (size.width + gradientWidth)
+                drawRect(
+                    brush =
+                        Brush.linearGradient(
+                            colors =
+                                listOf(
+                                    Color.Transparent,
+                                    shimmerColor.copy(alpha = 0.85f),
+                                    Color.Transparent,
+                                ),
+                            start = Offset(startX, 0f),
+                            end = Offset(startX + gradientWidth, 0f),
+                        ),
+                    topLeft = Offset(inset, size.height - barHeight - 1.dp.toPx()),
+                    size = Size(size.width - inset * 2f, barHeight),
+                )
+            }
+        } else {
+            Modifier
+        }
+
     Row(
         modifier =
             modifier
@@ -250,7 +299,7 @@ private fun LLMMessageListItem(
                         1.dp,
                         MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
                     ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().then(streamingShimmer),
             ) {
                 ChatMessageText(
                     modifier = Modifier.padding(14.dp),
