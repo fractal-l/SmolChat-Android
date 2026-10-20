@@ -45,14 +45,14 @@ class HFModelsAPI {
         PagingSource<Int, HFModelSearch.ModelSearchResult>() {
         private val ggufModelFilter = "gguf,conversational"
         private val pageSize = 10
+        private val search = HFModels.getSearch()
 
         override suspend fun load(
             params: LoadParams<Int>
         ): LoadResult<Int, HFModelSearch.ModelSearchResult> {
             val pageNumber = params.key ?: 1
             val result =
-                HFModels.getSearch()
-                    .searchModels(query, "", limit = pageSize, filter = ggufModelFilter)
+                search.searchModels(query, "", limit = pageSize, filter = ggufModelFilter)
             return LoadResult.Page(
                 data = result,
                 prevKey = null,

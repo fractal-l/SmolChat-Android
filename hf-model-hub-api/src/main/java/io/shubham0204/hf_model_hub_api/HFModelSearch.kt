@@ -47,7 +47,7 @@ class HFModelSearch(private val client: HttpClient) {
         DESCENDING(-1),
     }
 
-    private var pageURL = HFEndpoints.getHFModelsListEndpoint()
+    private var pageURL: String? = HFEndpoints.getHFModelsListEndpoint()
 
     suspend fun searchModels(
         query: String,
@@ -59,9 +59,10 @@ class HFModelSearch(private val client: HttpClient) {
         full: Boolean = true,
         config: Boolean = true,
     ): List<ModelSearchResult> {
+        val currentPageURL = pageURL ?: return emptyList()
         val response =
-            if (pageURL == HFEndpoints.getHFModelsListEndpoint()) {
-                client.get(HFEndpoints.getHFModelsListEndpoint()) {
+            if (currentPageURL == HFEndpoints.getHFModelsListEndpoint()) {
+                client.get(currentPageURL) {
                     url {
                         parameters.append("search", query)
                         // parameters.append("author", author)
@@ -74,11 +75,9 @@ class HFModelSearch(private val client: HttpClient) {
                     }
                 }
             } else {
-                client.get(pageURL)
+                client.get(currentPageURL)
             }
-        val linkHeader = response.headers["Link"] ?: return emptyList()
-        pageURL = parseLinkHeader(linkHeader)["next"] ?: return emptyList()
-        println("Page URL is: $pageURL")
+        pageURL = response.headers["Link"]?.let { parseLinkHeader(it)["next"] }
         return response.body()
     }
 
