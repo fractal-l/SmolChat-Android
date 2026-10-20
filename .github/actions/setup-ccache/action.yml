@@ -8,9 +8,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/ccache
-        key: ccache-${{ runner.os }}-ndk-r27c-${{ github.run_id }}
+        key: ccache-${{ runner.os }}-ndk-r27d-${{ hashFiles('smollm/src/main/cpp/**', 'smollm/build.gradle.kts', 'external/llama.cpp/CMakeLists.txt', 'external/llama.cpp/src/**', 'external/llama.cpp/common/**', 'external/llama.cpp/ggml/src/**', 'external/llama.cpp/include/**', 'external/cpu_features/**') }}
         restore-keys: |
-          ccache-${{ runner.os }}-ndk-r27c-
+          ccache-${{ runner.os }}-ndk-r27d-
 
     - name: Configure ccache
       shell: bash
@@ -20,7 +20,7 @@ runs:
           sudo apt-get install -y -qq ccache
         fi
         ccache --version
-        ccache --max-size=2G
+        ccache --max-size=500M
         ccache --zero-stats
         {
           echo "CCACHE_DIR=$HOME/.cache/ccache"
@@ -28,5 +28,6 @@ runs:
           echo "CCACHE_NOHASHDIR=true"
           echo "CCACHE_COMPILERCHECK=content"
           echo "CCACHE_SLOPPINESS=time_macros"
+          echo "CCACHE_HARDLINK=true"
           echo "CMAKE_COMPILER_LAUNCHER=ccache"
         } >> "$GITHUB_ENV"

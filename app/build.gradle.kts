@@ -19,7 +19,7 @@ val hasReleaseSigning =
 android {
     namespace = "io.shubham0204.smollmandroid"
     compileSdk = 35
-    ndkVersion = "27.2.12479018"
+    ndkVersion = "27.3.13750724"
 
     defaultConfig {
         applicationId = "io.shubham0204.smollmandroid"
@@ -27,6 +27,10 @@ android {
         targetSdk = 35
         versionCode = 16
         versionName = "16"
+
+        providers.gradleProperty("targetAbi").orNull?.let { abi ->
+            ndk { abiFilters.add(abi) }
+        }
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
