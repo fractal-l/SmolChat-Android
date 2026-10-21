@@ -905,10 +905,58 @@ LLMInference::completionLoop() {
 
 void
 LLMInference::stopCompletion() {
-    if (_storeChats && !_response.empty()) {
-        addChatMessage(_response.c_str(), "assistant");
-    }
     _response.clear();
+    _cacheResponseTokens.clear();
+    if (!_storeChats || _cacheValid) {
+        // No chat state to maintain, or completionLoop() already committed the
+        // turn to the KV cache on a clean end of generation.
+        return;
+    }
+
+    // Cancelled or failed turn: the KV cache holds the rendered prompt followed
+    // by the tokens generated before the stop. Keep the part that still matches
+    // this turn's prompt and drop the rest, so the next turn reuses the prefix
+    // instead of re-prefilling the conversation. The aborted reply is not
+    // appended to _messages: it is never persisted, and leaving it in the
+    // native transcript would desync it from the database.
+    const size_t limit = std::min(_kvTokens.size(), _lastPromptTokens.size());
+    size_t       reusable = 0;
+    while (reusable < limit && _kvTokens[reusable] == _lastPromptTokens[reusable]) {
+        ++reusable;
+    }
+
+    if (reusable == 0) {
+        LOGi("stopCompletion: no reusable prefix, discarding KV cache");
+        _resetContext();
+        return;
+    }
+
+    if (reusable < _kvTokens.size() &&
+        llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) >= (llama_pos) reusable &&
+        !llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos) reusable, -1)) {
+        LOGe("stopCompletion: unable to trim KV cache, resetting");
+        _resetContext();
+        return;
+    }
+    _kvTokens.resize(reusable);
+
+    // Boundaries past the retained prefix no longer map to cached tokens.
+    for (auto it = _messageBoundaries.begin(); it != _messageBoundaries.end();) {
+        if (it->second > _kvTokens.size()) {
+            it = _messageBoundaries.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // The retained tokens are exactly the prompt, so the sentinel fast path is
+    // valid only when nothing was truncated.
+    _lastPromptTokens  = _kvTokens;
+    _lastResponseEmpty = false;
+    _cacheValid        = true;
+    _nCtxUsed          = static_cast<int>(_kvTokens.size());
+    LOGi("stopCompletion: kept %zu cached tokens after an interrupted turn",
+         _kvTokens.size());
 }
 
 LLMInference::~LLMInference() {

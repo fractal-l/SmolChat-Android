@@ -111,6 +111,9 @@ class LLMInference {
 
     std::string completionLoop();
 
+    // Finalizes the turn. completionLoop() commits a clean end of generation to
+    // the KV cache; when called earlier (cancelled or failed turn) the cache is
+    // trimmed back to the prompt prefix so the next turn can still reuse it.
     void stopCompletion();
 
     ~LLMInference();

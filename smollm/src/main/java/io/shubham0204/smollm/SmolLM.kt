@@ -302,13 +302,19 @@ class SmolLM {
 
     fun getResponseAsFlow(query: String): Flow<String> = flow {
         verifyHandle()
-        usedJinjaTemplate = startCompletion(nativePtr, query)
-        var piece = completionLoop(nativePtr)
-        while (piece != "[EOG]") {
-            emit(piece)
-            piece = completionLoop(nativePtr)
+        try {
+            usedJinjaTemplate = startCompletion(nativePtr, query)
+            var piece = completionLoop(nativePtr)
+            while (piece != "[EOG]") {
+                emit(piece)
+                piece = completionLoop(nativePtr)
+            }
+        } finally {
+            // Cancellation must always finalize the native turn, otherwise the KV
+            // cache keeps tokens that were never committed to the transcript and the
+            // next turn has to re-prefill the whole conversation.
+            stopCompletion(nativePtr)
         }
-        stopCompletion(nativePtr)
     }
 
     /**
@@ -321,14 +327,17 @@ class SmolLM {
      */
     fun getResponse(query: String): String {
         verifyHandle()
-        usedJinjaTemplate = startCompletion(nativePtr, query)
-        var piece = completionLoop(nativePtr)
         var response = ""
-        while (piece != "[EOG]") {
-            response += piece
-            piece = completionLoop(nativePtr)
+        try {
+            usedJinjaTemplate = startCompletion(nativePtr, query)
+            var piece = completionLoop(nativePtr)
+            while (piece != "[EOG]") {
+                response += piece
+                piece = completionLoop(nativePtr)
+            }
+        } finally {
+            stopCompletion(nativePtr)
         }
-        stopCompletion(nativePtr)
         return response
     }
 
