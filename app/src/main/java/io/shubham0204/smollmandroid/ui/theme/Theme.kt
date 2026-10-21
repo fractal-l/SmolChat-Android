@@ -31,6 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -174,6 +175,9 @@ fun SmolLMAndroidTheme(
             else -> lightScheme
         }
     val view = LocalView.current
+    val windowBackground = remember(colorScheme.surface) {
+        ColorDrawable(colorScheme.surface.toArgb())
+    }
     if (!view.isInEditMode) {
         SideEffect {
             val window = view.context.findActivity()?.window ?: return@SideEffect
@@ -183,7 +187,7 @@ fun SmolLMAndroidTheme(
             }
             // Paint the area behind the system bars (left visible by safeDrawingPadding)
             // with the current surface color instead of the activity's window background.
-            window.setBackgroundDrawable(ColorDrawable(colorScheme.surface.toArgb()))
+            window.setBackgroundDrawable(windowBackground)
         }
     }
     MaterialTheme(colorScheme = colorScheme, content = content, typography = AppTypography)

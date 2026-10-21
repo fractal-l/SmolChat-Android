@@ -16,7 +16,6 @@
 
 package io.shubham0204.smollmandroid.data
 
-import androidx.compose.runtime.Stable
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -27,7 +26,6 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 
 @Entity(tableName = "LLMModel")
-@Stable
 @Serializable
 data class LLMModel(
     @PrimaryKey(autoGenerate = true) var id: Long = 0,
@@ -47,7 +45,7 @@ interface LLMModelDao {
     suspend fun getAllModelsList(): List<LLMModel>
 
     @Query("SELECT * FROM LLMModel WHERE id = :id")
-    suspend fun getModel(id: Long): LLMModel
+    suspend fun getModel(id: Long): LLMModel?
 
     @Insert
     suspend fun insertModels(vararg models: LLMModel)

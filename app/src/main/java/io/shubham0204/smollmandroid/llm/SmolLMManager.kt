@@ -26,6 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.sample
 import kotlinx.coroutines.launch
@@ -62,6 +63,9 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     private var resetChatJob: Job? = null
 
     @Volatile
+    private var benchmarkJob: Job? = null
+
+    @Volatile
     private var chat: Chat? = null
 
     @Volatile
@@ -89,17 +93,19 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         onError: (Exception) -> Unit,
         onSuccess: () -> Unit,
     ) {
-        val newCachePath = if (chat.isTask) null else cacheFileFor(chat, modelPath, params)
+        val newCachePath = cacheFileFor(chat, modelPath, params)
         stateLock.withLock {
             // Cancel any in-flight generation/load before replacing the native model
             val previousLoadJob = modelInitJob
             val previousResponseJob = responseGenerationJob
             val previousResetJob = resetChatJob
+            val previousBenchmarkJob = benchmarkJob
             val previousChat = this.chat
             val previousCachePath = cachePath
             previousLoadJob?.cancel()
             previousResponseJob?.cancel()
             previousResetJob?.cancel()
+            previousBenchmarkJob?.cancel()
             isInstanceLoaded.set(false)
 
             try {
@@ -110,10 +116,8 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousResponseJob?.join()
                         previousLoadJob?.join()
                         previousResetJob?.join()
-                        if (previousChat != null &&
-                            !previousChat.isTask &&
-                            previousCachePath != null
-                        ) {
+                        previousBenchmarkJob?.join()
+                        if (previousChat != null && previousCachePath != null) {
                             if (saveCacheToDisk(previousCachePath)) {
                                 LOGD("Previous KV cache saved")
                             }
@@ -133,26 +137,24 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                             LOGD("System prompt added")
                         }
 
-                        if (!chat.isTask) {
-                            appDB.getMessagesForModel(chat.id).forEach { message ->
-                                if (message.isUserMessage) {
-                                    instance.addUserMessage(message.message)
-                                    LOGD("User message added: ${message.message}")
-                                } else {
-                                    instance.addAssistantMessage(message.message)
-                                    LOGD("Assistant message added: ${message.message}")
-                                }
+                        appDB.getMessagesForModel(chat.id).forEach { message ->
+                            if (message.isUserMessage) {
+                                instance.addUserMessage(message.message)
+                                LOGD("User message added: ${message.message}")
+                            } else {
+                                instance.addAssistantMessage(message.message)
+                                LOGD("Assistant message added: ${message.message}")
                             }
-                            val restored =
-                                newCachePath?.let { restoreCacheFromDisk(it.absolutePath) } ?: false
-                            LOGD(
-                                if (restored) {
-                                    "KV cache restored"
-                                } else {
-                                    "No compatible KV cache, starting fresh"
-                                }
-                            )
                         }
+                        val restored =
+                            newCachePath?.let { restoreCacheFromDisk(it.absolutePath) } ?: false
+                        LOGD(
+                            if (restored) {
+                                "KV cache restored"
+                            } else {
+                                "No compatible KV cache, starting fresh"
+                            }
+                        )
 
                         withContext(Dispatchers.Main) {
                             isInstanceLoaded.set(true)
@@ -215,16 +217,19 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                 return
             }
             val previousResponseJob = responseGenerationJob
+            val previousBenchmarkJob = benchmarkJob
             previousResponseJob?.cancel()
+            previousBenchmarkJob?.cancel()
             val previousResetJob = resetChatJob
             resetChatJob =
                 CoroutineScope(Dispatchers.Default).launch {
                     try {
                         previousResetJob?.join()
                         previousResponseJob?.join()
+                        previousBenchmarkJob?.join()
                         isInferenceOn = true
                         this@SmolLMManager.chat = chat
-                        val messages = if (chat.isTask) emptyList() else appDB.getMessagesForModel(chat.id)
+                        val messages = appDB.getMessagesForModel(chat.id)
                         val messageCount =
                             (if (chat.systemPrompt.isNotEmpty()) 1 else 0) + messages.size
                         val trimmed = instance.trimToMessageCount(messageCount)
@@ -248,9 +253,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         // later crash cannot leave the on-disk cache paired
                         // with a different message list.
                         val currentCachePath = cachePath
-                        if (!chat.isTask && currentCachePath != null &&
-                            isInstanceLoaded.get()
-                        ) {
+                        if (currentCachePath != null && isInstanceLoaded.get()) {
                             if (saveCacheToDisk(currentCachePath)) {
                                 LOGD("KV cache saved after reset")
                             }
@@ -269,38 +272,62 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         }
     }
 
-    fun unload() {
+    fun unload() = unloadInternal()
+
+    /** Unloads the native instance and suspends until its cache is saved and handle is closed. */
+    suspend fun unloadAndWait() {
+        unloadInternal().join()
+    }
+
+    private fun unloadInternal(): Job {
+        lateinit var unloadJob: Job
         stateLock.withLock {
-            // Cancel jobs
-            responseGenerationJob.safeCancelJobIfActive()
-            modelInitJob.safeCancelJobIfActive()
-            resetChatJob.safeCancelJobIfActive()
+            val previousResponseJob = responseGenerationJob
+            val previousLoadJob = modelInitJob
+            val previousResetJob = resetChatJob
+            val previousBenchmarkJob = benchmarkJob
+            previousResponseJob.safeCancelJobIfActive()
+            previousLoadJob.safeCancelJobIfActive()
+            previousResetJob.safeCancelJobIfActive()
+            previousBenchmarkJob.safeCancelJobIfActive()
 
             val currentChat = chat
             val currentCachePath = cachePath
-            if (isInstanceLoaded.get() &&
-                currentChat != null &&
-                !currentChat.isTask &&
-                currentCachePath != null
-            ) {
-                if (saveCacheToDisk(currentCachePath)) {
-                    LOGD("KV cache saved before unload")
-                } else {
-                    LOGD("No clean KV cache to save before unload")
-                }
-            }
-
+            val wasLoaded = isInstanceLoaded.get()
             isInstanceLoaded.set(false)
+            isInferenceOn = false
+            responseGenerationJob = null
+            resetChatJob = null
+            benchmarkJob = null
             chat = null
             cachePath = null
 
-            // Close synchronously to prevent race with subsequent load()
-            try {
-                instance.close()
-            } catch (e: Exception) {
-                LOGD("Error closing instance: ${e.message}")
-            }
+            // Native teardown can take a while, so run it off the main thread. NonCancellable
+            // keeps the cache and native handle consistent even when a new load supersedes it.
+            unloadJob =
+                CoroutineScope(Dispatchers.Default).launch {
+                    withContext(NonCancellable) {
+                        previousResponseJob?.join()
+                        previousLoadJob?.join()
+                        previousResetJob?.join()
+                        previousBenchmarkJob?.join()
+                        if (wasLoaded && currentChat != null && currentCachePath != null) {
+                            if (saveCacheToDisk(currentCachePath)) {
+                                LOGD("KV cache saved before unload")
+                            } else {
+                                LOGD("No clean KV cache to save before unload")
+                            }
+                        }
+                        try {
+                            instance.close()
+                        } catch (e: Exception) {
+                            LOGD("Error closing instance: ${e.message}")
+                        }
+                    }
+                }
+            modelInitJob = unloadJob
         }
+        return unloadJob
     }
 
     @OptIn(FlowPreview::class)
@@ -322,11 +349,14 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
             // Cancel any existing response generation and wait for it to stop
             // before touching the native instance again.
             val previousResponseJob = responseGenerationJob
+            val previousBenchmarkJob = benchmarkJob
             previousResponseJob?.cancel()
+            previousBenchmarkJob?.cancel()
 
             responseGenerationJob = CoroutineScope(Dispatchers.Default).launch {
                 try {
                     previousResponseJob?.join()
+                    previousBenchmarkJob?.join()
                     resetChatJob?.join()
                     isInferenceOn = true
                     val responseBuilder = StringBuilder()
@@ -372,7 +402,6 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                             val latestCachePath = cachePath
                             if (isInstanceLoaded.get() &&
                                 latestChat?.id == currentChat.id &&
-                                !latestChat.isTask &&
                                 latestCachePath != null
                             ) {
                                 if (saveCacheToDisk(latestCachePath)) {
@@ -415,16 +444,46 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     private val BENCH_REPETITION = 3
 
     fun benchmark(onResult: (String) -> Unit) {
-        CoroutineScope(Dispatchers.Default).launch {
-            val result = instance.benchModel(
-                BENCH_PROMPT_PROCESSING_TOKENS,
-                BENCH_TOKEN_GENERATION_TOKENS,
-                BENCH_SEQUENCE,
-                BENCH_REPETITION
-            )
-            withContext(Dispatchers.Main) {
-                onResult(result)
+        stateLock.withLock {
+            if (!isInstanceLoaded.get()) {
+                onResult("Load a model before running the benchmark.")
+                return
             }
+            val previousResponseJob = responseGenerationJob
+            val previousResetJob = resetChatJob
+            val previousBenchmarkJob = benchmarkJob
+            previousResponseJob.safeCancelJobIfActive()
+            previousResetJob.safeCancelJobIfActive()
+            previousBenchmarkJob.safeCancelJobIfActive()
+            benchmarkJob =
+                CoroutineScope(Dispatchers.Default).launch {
+                    try {
+                        previousResponseJob?.join()
+                        previousResetJob?.join()
+                        previousBenchmarkJob?.join()
+                        if (!isInstanceLoaded.get()) {
+                            withContext(Dispatchers.Main) {
+                                onResult("The model was unloaded before the benchmark ran.")
+                            }
+                            return@launch
+                        }
+                        isInferenceOn = true
+                        val result =
+                            instance.benchModel(
+                                BENCH_PROMPT_PROCESSING_TOKENS,
+                                BENCH_TOKEN_GENERATION_TOKENS,
+                                BENCH_SEQUENCE,
+                                BENCH_REPETITION,
+                            )
+                        withContext(Dispatchers.Main) { onResult(result) }
+                    } catch (e: CancellationException) {
+                        LOGD("Benchmark cancelled")
+                    } catch (e: Exception) {
+                        withContext(Dispatchers.Main) { onResult(e.message ?: "Benchmark failed") }
+                    } finally {
+                        isInferenceOn = false
+                    }
+                }
         }
     }
 

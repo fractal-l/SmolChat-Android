@@ -25,10 +25,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -39,16 +42,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -60,7 +60,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -79,25 +78,19 @@ import compose.icons.feathericons.Menu
 import compose.icons.feathericons.MoreVertical
 import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.Chat
-import io.shubham0204.smollmandroid.data.Task
 import io.shubham0204.smollmandroid.ui.components.AppBarTitleText
-import io.shubham0204.smollmandroid.ui.components.MediumLabelText
 import io.shubham0204.smollmandroid.ui.components.SelectModelsList
-import io.shubham0204.smollmandroid.ui.components.TasksList
 import io.shubham0204.smollmandroid.ui.components.TextFieldDialog
 import io.shubham0204.smollmandroid.ui.preview.dummyChats
 import io.shubham0204.smollmandroid.ui.preview.dummyFolders
 import io.shubham0204.smollmandroid.ui.preview.dummyLLMModels
-import io.shubham0204.smollmandroid.ui.preview.dummyTasksList
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.ChangeFolderDialogUI
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.ChatMessageOptionsDialog
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.ChatMoreOptionsPopup
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.CodeSnippetsListDialog
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.FolderOptionsDialog
 import io.shubham0204.smollmandroid.ui.screens.chat.messages.MessagesList
-import io.shubham0204.smollmandroid.ui.screens.manage_tasks.ManageTasksActivity
 import io.shubham0204.smollmandroid.ui.theme.SmolLMAndroidTheme
-import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
@@ -125,29 +118,8 @@ class ChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        /**
-         * Check if the activity was launched by an intent to share text with the app If yes, then,
-         * extract the text and set its value to [viewModel.questionTextDefaultVal]
-         */
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
-                val chatCount = viewModel.appDB.getChatsCount()
-                val newChat = viewModel.appDB.addChat(chatName = "Untitled ${chatCount + 1}")
-                viewModel.onEvent(ChatScreenUIEvent.ChatEvents.SwitchChat(newChat))
-                viewModel.questionTextDefaultVal = text
-            }
-        }
-
-        /**
-         * Check if the activity was launched by an intent created by a dynamic shortcut. If yes,
-         * get the corresponding task (task ID is stored within the intent) and create a new chat
-         * instance with the task's parameters
-         */
-        if (intent?.action == Intent.ACTION_VIEW && intent.getLongExtra("task_id", 0L) != 0L) {
-            val taskId = intent.getLongExtra("task_id", 0L)
-            viewModel.appDB.getTask(taskId).let { task ->
-                viewModel.onEvent(ChatScreenUIEvent.ChatEvents.OnTaskSelected(task))
-            }
+        if (savedInstanceState == null) {
+            handleIncomingIntent(intent)
         }
 
         setContent {
@@ -156,8 +128,34 @@ class ChatActivity : ComponentActivity() {
                 NavHost(
                     navController = navController,
                     startDestination = ChatRoute,
-                    enterTransition = { fadeIn() },
-                    exitTransition = { fadeOut() },
+                    enterTransition = {
+                        slideInHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                            initialOffsetX = { it / 8 },
+                        ) + fadeIn(tween(durationMillis = 180))
+                    },
+                    exitTransition = {
+                        slideOutHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            targetOffsetX = { -it / 12 },
+                        ) + fadeOut(tween(durationMillis = 160))
+                    },
+                    popEnterTransition = {
+                        slideInHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                            initialOffsetX = { -it / 8 },
+                        ) + fadeIn(tween(durationMillis = 180))
+                    },
+                    popExitTransition = {
+                        slideOutHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            targetOffsetX = { it / 12 },
+                        ) + fadeOut(tween(durationMillis = 160))
+                    },
                 ) {
                     composable<BenchmarkModelRoute> {
                         BenchmarkModelScreen(
@@ -209,7 +207,10 @@ class ChatActivity : ComponentActivity() {
                             viewModel.renderedPartialResponse.collectAsStateWithLifecycle(
                                 LocalLifecycleOwner.current
                             )
-                        val defaultQuestion = remember { viewModel.consumeQuestionTextDefaultVal() }
+                        val defaultQuestion =
+                            remember(uiState.chat.id) {
+                                viewModel.consumeQuestionTextDefaultVal()
+                            }
                         ChatActivityScreenUI(
                             uiState,
                             renderedPartialResponse = renderedPartialResponse,
@@ -224,6 +225,23 @@ class ChatActivity : ComponentActivity() {
                         )
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            intent.getStringExtra(Intent.EXTRA_TEXT)?.let { text ->
+                val chatCount = viewModel.appDB.getChatsCount()
+                val newChat = viewModel.appDB.addChat(chatName = "Untitled ${chatCount + 1}")
+                viewModel.onEvent(ChatScreenUIEvent.ChatEvents.SwitchChat(newChat))
+                viewModel.questionTextDefaultVal = text
             }
         }
     }
@@ -260,7 +278,6 @@ private fun PreviewChatActivityScreenUI() {
                 folders = dummyFolders.toImmutableList(),
                 chats = dummyChats.toImmutableList(),
                 models = dummyLLMModels.toImmutableList(),
-                tasks = dummyTasksList.toImmutableList(),
             ),
         onEditChatParamsClick = { _, _ -> },
         onBenchmarkModelClick = {},
@@ -399,9 +416,6 @@ fun ChatActivityScreenUI(
                     showModelEditIcon = true,
                 )
             }
-            if (uiState.showTasksBottomSheet) {
-                TasksListBottomSheet(uiState.tasks, onEvent)
-            }
             if (uiState.showChangeFolderDialog) {
                 ChangeFolderDialogUI(
                     onDismissRequest = {
@@ -467,71 +481,4 @@ private fun RAMUsageLabel(memoryUsage: Pair<Float, Float>) {
         modifier = Modifier.fillMaxWidth(),
         textAlign = TextAlign.Center,
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TasksListBottomSheet(tasks: ImmutableList<Task>, onEvent: (ChatScreenUIEvent) -> Unit) {
-    val context = LocalContext.current
-    // adding bottom sheets in Compose
-    // See https://developer.android.com/develop/ui/compose/components/bottom-sheets
-    ModalBottomSheet(
-        containerColor = MaterialTheme.colorScheme.surfaceContainer,
-        onDismissRequest = {
-            onEvent(ChatScreenUIEvent.DialogEvents.ToggleTaskListBottomList(visible = false))
-        },
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.surfaceContainer,
-                        RoundedCornerShape(8.dp),
-                    )
-                    .padding(8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            if (tasks.isEmpty()) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Text(
-                    stringResource(R.string.chat_no_task_created),
-                    modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.labelMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        onEvent(
-                            ChatScreenUIEvent.DialogEvents.ToggleTaskListBottomList(visible = true)
-                        )
-                        Intent(context, ManageTasksActivity::class.java).also {
-                            context.startActivity(it)
-                        }
-                    }
-                ) {
-                    MediumLabelText(stringResource(R.string.chat_create_task))
-                }
-                Spacer(modifier = Modifier.height(24.dp))
-            } else {
-                AppBarTitleText(stringResource(R.string.chat_select_task))
-                TasksList(
-                    tasks,
-                    onTaskSelected = { task ->
-                        onEvent(ChatScreenUIEvent.ChatEvents.OnTaskSelected(task))
-                    },
-                    onUpdateTaskClick = { // Not applicable as showTaskOptions is set to `false`
-                    },
-                    onEditTaskClick = { // Not applicable as showTaskOptions is set to `false`
-                    },
-                    onDeleteTaskClick = { // Not applicable as showTaskOptions is set to `false`
-                    },
-                    enableTaskClick = true,
-                    showTaskOptions = false,
-                )
-            }
-        }
-    }
 }

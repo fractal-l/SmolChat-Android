@@ -16,7 +16,6 @@
 
 package io.shubham0204.smollmandroid.data
 
-import androidx.compose.runtime.Stable
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Insert
@@ -26,7 +25,6 @@ import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "Folder")
-@Stable
 data class Folder(@PrimaryKey(autoGenerate = true) var id: Long = 0, var name: String = "")
 
 @Dao

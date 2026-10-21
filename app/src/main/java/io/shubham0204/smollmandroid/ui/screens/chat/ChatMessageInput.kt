@@ -1,5 +1,14 @@
 package io.shubham0204.smollmandroid.ui.screens.chat
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -47,6 +56,12 @@ import io.shubham0204.smollmandroid.R
 import io.shubham0204.smollmandroid.data.Chat
 import io.shubham0204.smollmandroid.ui.screens.chat.ChatScreenViewModel.ModelLoadingState
 
+private enum class ComposerAction {
+    Stop,
+    Skip,
+    Send,
+}
+
 @Composable
 fun MessageInput(
     currChat: Chat,
@@ -82,22 +97,43 @@ fun MessageInput(
         return
     }
 
-    var questionText by rememberSaveable { mutableStateOf(defaultQuestion ?: "") }
+    var questionText by rememberSaveable(currChat.id) { mutableStateOf(defaultQuestion ?: "") }
     val keyboardController = LocalSoftwareKeyboardController.current
     val sendMessage = {
         val message = questionText.trim()
         if (message.isNotEmpty()) {
             keyboardController?.hide()
+            if (audioTranscriptionUIState.isRecording) {
+                onEvent(ChatScreenUIEvent.ChatEvents.StopAudioTranscription)
+            }
             onEvent(ChatScreenUIEvent.ChatEvents.SendUserQuery(message))
             questionText = ""
         }
     }
+    val micBackgroundColor by
+        animateColorAsState(
+            targetValue =
+                if (audioTranscriptionUIState.isRecording) {
+                    MaterialTheme.colorScheme.errorContainer
+                } else {
+                    Color.Transparent
+                },
+            animationSpec = tween(durationMillis = 180),
+            label = "mic_background",
+        )
+    val composerAction =
+        when {
+            isGeneratingResponse -> ComposerAction.Stop
+            questionText.isBlank() -> ComposerAction.Skip
+            else -> ComposerAction.Send
+        }
 
     Surface(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .animateContentSize(animationSpec = tween(durationMillis = 180)),
         shape = RoundedCornerShape(28.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
@@ -114,8 +150,10 @@ fun MessageInput(
                             onEvent(ChatScreenUIEvent.ChatEvents.StopAudioTranscription)
                         } else {
                             onEvent(
-                                ChatScreenUIEvent.ChatEvents.StartAudioTranscription {
-                                    questionText = it
+                                ChatScreenUIEvent.ChatEvents.StartAudioTranscription { transcription ->
+                                    questionText =
+                                        if (questionText.isBlank()) transcription
+                                        else "$questionText $transcription"
                                 }
                             )
                         }
@@ -123,14 +161,7 @@ fun MessageInput(
                     modifier =
                         Modifier
                             .size(44.dp)
-                            .background(
-                                if (audioTranscriptionUIState.isRecording) {
-                                    MaterialTheme.colorScheme.errorContainer
-                                } else {
-                                    Color.Transparent
-                                },
-                                CircleShape,
-                            ),
+                            .background(micBackgroundColor, CircleShape),
                 ) {
                     if (audioTranscriptionUIState.isRecording) {
                         Icon(
@@ -178,43 +209,57 @@ fun MessageInput(
                 keyboardActions = KeyboardActions(onSend = { sendMessage() }),
             )
             Spacer(modifier = Modifier.width(6.dp))
-            if (isGeneratingResponse) {
-                FilledIconButton(
-                    onClick = { onEvent(ChatScreenUIEvent.ChatEvents.StopGeneration) },
-                    modifier = Modifier.size(48.dp),
-                    colors =
-                        IconButtonDefaults.filledIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        ),
-                ) {
-                    Icon(
-                        FeatherIcons.StopCircle,
-                        contentDescription = stringResource(R.string.chat_stop_generating),
-                    )
-                }
-            } else if (questionText.isBlank()) {
-                FilledIconButton(
-                    onClick = {
-                        keyboardController?.hide()
-                        onEvent(ChatScreenUIEvent.ChatEvents.SkipTurn)
-                    },
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = FeatherIcons.SkipForward,
-                        contentDescription = stringResource(R.string.chat_skip_turn),
-                    )
-                }
-            } else {
-                FilledIconButton(
-                    onClick = sendMessage,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        imageVector = FeatherIcons.Send,
-                        contentDescription = stringResource(R.string.chat_send_message),
-                    )
+            AnimatedContent(
+                targetState = composerAction,
+                transitionSpec = {
+                    (fadeIn(tween(120)) + scaleIn(initialScale = 0.8f)) togetherWith
+                        (fadeOut(tween(90)) + scaleOut(targetScale = 0.8f))
+                },
+                contentAlignment = Alignment.Center,
+                label = "composer_action",
+            ) { action ->
+                when (action) {
+                    ComposerAction.Stop ->
+                        FilledIconButton(
+                            onClick = { onEvent(ChatScreenUIEvent.ChatEvents.StopGeneration) },
+                            modifier = Modifier.size(48.dp),
+                            colors =
+                                IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                ),
+                        ) {
+                            Icon(
+                                FeatherIcons.StopCircle,
+                                contentDescription =
+                                    stringResource(R.string.chat_stop_generating),
+                            )
+                        }
+
+                    ComposerAction.Skip ->
+                        FilledIconButton(
+                            onClick = {
+                                keyboardController?.hide()
+                                onEvent(ChatScreenUIEvent.ChatEvents.SkipTurn)
+                            },
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = FeatherIcons.SkipForward,
+                                contentDescription = stringResource(R.string.chat_skip_turn),
+                            )
+                        }
+
+                    ComposerAction.Send ->
+                        FilledIconButton(
+                            onClick = sendMessage,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                imageVector = FeatherIcons.Send,
+                                contentDescription = stringResource(R.string.chat_send_message),
+                            )
+                        }
                 }
             }
         }

@@ -17,10 +17,10 @@
 package io.shubham0204.smollmandroid.data
 
 import android.util.Log
-import androidx.compose.runtime.Stable
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Ignore
 import androidx.room.Insert
 import androidx.room.PrimaryKey
@@ -46,8 +46,7 @@ object DateSerializer : KSerializer<Date> {
         PrimitiveSerialDescriptor("Date", PrimitiveKind.LONG)
 }
 
-@Entity(tableName = "Chat")
-@Stable
+@Entity(tableName = "Chat", indices = [Index("folderId")])
 @Serializable
 data class Chat(
     @PrimaryKey(autoGenerate = true) var id: Long = 0,
@@ -102,11 +101,6 @@ data class Chat(
      */
     var chatTemplate: String = "",
     /**
-     * Whether this chat is a task or not. Tasks are special chats that are used to perform a
-     * specific task. They do not store conversation messages thus being 'stateless' in nature.
-     */
-    var isTask: Boolean = false,
-    /**
      * The ID of the folder that this chat belongs to. -1 indicates that the chat does not belong to
      * any folder.
      */
@@ -149,5 +143,10 @@ interface ChatsDao {
     fun updateFolderIds(oldFolderId: Long, newFolderId: Long)
 
     @Query("SELECT * FROM Chat WHERE id = :chatId")
-    fun getChat(chatId: Long): Chat
+    fun getChat(chatId: Long): Chat?
+
+    @Query(
+        "UPDATE Chat SET llmModelId = -1, contextSizeConsumed = 0 WHERE llmModelId = :modelId"
+    )
+    suspend fun clearModelReferences(modelId: Long)
 }

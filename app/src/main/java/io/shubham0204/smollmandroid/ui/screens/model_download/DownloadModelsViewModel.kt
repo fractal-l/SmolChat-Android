@@ -39,15 +39,17 @@ import io.shubham0204.smollmandroid.ui.components.hideProgressDialog
 import io.shubham0204.smollmandroid.ui.components.setProgressDialogText
 import io.shubham0204.smollmandroid.ui.components.setProgressDialogTitle
 import io.shubham0204.smollmandroid.ui.components.showProgressDialog
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.core.annotation.Single
 import java.io.File
-import java.io.FileOutputStream
+import java.nio.file.Files
 import java.nio.file.Paths
+import java.nio.file.StandardCopyOption
 
 @Single
 class DownloadModelsViewModel(
@@ -61,7 +63,11 @@ class DownloadModelsViewModel(
     fun downloadModelFromIndex(selectedPopularModelIndex: Int) {
         // Downloading files in Android with the DownloadManager API
         // Ref: https://youtu.be/4t8EevQSYK4?feature=shared
-        val modelUrl = getPopularModel(selectedPopularModelIndex)!!.url
+        val modelUrl = getPopularModel(selectedPopularModelIndex)?.url
+        if (modelUrl == null) {
+            Toast.makeText(context, R.string.toast_invalid_file, Toast.LENGTH_SHORT).show()
+            return
+        }
         downloadModelFromUrl(modelUrl)
     }
 
@@ -93,40 +99,103 @@ class DownloadModelsViewModel(
      * file.
      */
     fun copyModelFile(uri: Uri, onComplete: () -> Unit) {
-        var fileName = ""
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            cursor.moveToFirst()
-            fileName = cursor.getString(nameIndex)
-        }
-        if (fileName.isNotEmpty()) {
+        val fileName =
+            runCatching {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex >= 0) cursor.getString(nameIndex) else null
+                    } else {
+                        null
+                    }
+                }
+            }
+                .getOrNull()
+                ?.let { File(it).name }
+                ?.takeIf { it.isNotBlank() && it != "." && it != ".." }
+        if (fileName != null && fileName.endsWith(".gguf", ignoreCase = true)) {
             setProgressDialogTitle(context.getString(R.string.dialog_progress_copy_model_title))
             setProgressDialogText(
                 context.getString(R.string.dialog_progress_copy_model_text, fileName)
             )
             showProgressDialog()
-            CoroutineScope(Dispatchers.IO).launch {
-                context.contentResolver.openInputStream(uri).use { inputStream ->
-                    FileOutputStream(File(context.filesDir, fileName)).use { outputStream ->
-                        inputStream?.copyTo(outputStream)
+            viewModelScope.launch(Dispatchers.IO) {
+                val targetFile = File(context.filesDir, fileName)
+                val temporaryFile = File(context.filesDir, "${fileName}.part")
+                val targetExisted = targetFile.exists()
+                var moved = false
+                var persisted = false
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        temporaryFile.outputStream().use { outputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
+                    } ?: throw IllegalStateException("Could not open the selected file.")
+
+                    val ggufReader = GGUFReader()
+                    ggufReader.load(temporaryFile.absolutePath)
+                    val contextSize =
+                        ggufReader.getContextSize() ?: SmolLM.DefaultInferenceParams.contextSize
+                    val chatTemplate =
+                        ggufReader.getChatTemplate() ?: SmolLM.DefaultInferenceParams.chatTemplate
+                    Files.move(
+                        temporaryFile.toPath(),
+                        targetFile.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                    moved = true
+
+                    val targetPath = targetFile.canonicalPath
+                    val existingModel =
+                        appDB.getModelsList().firstOrNull {
+                            File(it.path).canonicalPath == targetPath
+                        }
+                    if (existingModel == null) {
+                        appDB.addModel(
+                            fileName,
+                            "",
+                            Paths.get(context.filesDir.absolutePath, fileName).toString(),
+                            contextSize.toInt(),
+                            chatTemplate,
+                        )
+                    } else {
+                        appDB.updateModel(
+                            existingModel.copy(
+                                name = fileName,
+                                path = targetFile.absolutePath,
+                                contextSize = contextSize.toInt(),
+                                chatTemplate = chatTemplate,
+                            )
+                        )
                     }
-                }
-                val ggufReader = GGUFReader()
-                ggufReader.load(File(context.filesDir, fileName).absolutePath)
-                val contextSize =
-                    ggufReader.getContextSize() ?: SmolLM.DefaultInferenceParams.contextSize
-                val chatTemplate =
-                    ggufReader.getChatTemplate() ?: SmolLM.DefaultInferenceParams.chatTemplate
-                appDB.addModel(
-                    fileName,
-                    "",
-                    Paths.get(context.filesDir.absolutePath, fileName).toString(),
-                    contextSize.toInt(),
-                    chatTemplate,
-                )
-                withContext(Dispatchers.Main) {
-                    hideProgressDialog()
-                    onComplete()
+                    persisted = true
+
+                    withContext(Dispatchers.Main) { onComplete() }
+                } catch (e: CancellationException) {
+                    withContext(NonCancellable) {
+                        temporaryFile.delete()
+                        if (moved && !targetExisted && !persisted) {
+                            targetFile.delete()
+                        }
+                    }
+                    throw e
+                } catch (e: Exception) {
+                    temporaryFile.delete()
+                    // If this was a new model, don't leave an untracked file behind when
+                    // persisting it fails. An existing model's file is valid and is kept.
+                    if (moved && !targetExisted) {
+                        targetFile.delete()
+                    }
+                    withContext(NonCancellable + Dispatchers.Main) {
+                        Toast.makeText(
+                                context,
+                                R.string.toast_model_import_failed,
+                                Toast.LENGTH_LONG,
+                        )
+                            .show()
+                    }
+                } finally {
+                    withContext(NonCancellable + Dispatchers.Main) { hideProgressDialog() }
                 }
             }
         } else {
@@ -142,12 +211,19 @@ class DownloadModelsViewModel(
     fun fetchModelInfoAndTree(
         modelId: String,
         onResult: (HFModelInfo.ModelInfo, List<HFModelTree.HFModelFile>) -> Unit,
+        onError: (String) -> Unit = {},
     ) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val modelInfo = hfModelsAPI.getModelInfo(modelId)
-            var modelTree = hfModelsAPI.getModelTree(modelId)
-            modelTree = modelTree.filter { modelFile -> modelFile.path.endsWith("gguf") }
-            withContext(Dispatchers.Main) { onResult(modelInfo, modelTree) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val modelInfo = hfModelsAPI.getModelInfo(modelId)
+                val modelTree =
+                    hfModelsAPI.getModelTree(modelId).filter { modelFile ->
+                        modelFile.path.endsWith(".gguf")
+                    }
+                withContext(Dispatchers.Main) { onResult(modelInfo, modelTree) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onError(e.message ?: "Could not load the model.") }
+            }
         }
     }
 }

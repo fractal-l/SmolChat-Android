@@ -1,8 +1,5 @@
 import java.net.URI
 
-include(":smolvectordb")
-
-
 pluginManagement {
     repositories {
         google {

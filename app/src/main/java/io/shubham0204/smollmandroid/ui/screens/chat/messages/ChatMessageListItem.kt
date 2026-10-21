@@ -36,6 +36,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -228,6 +229,14 @@ private fun LLMMessageListItem(
     responseGenerationTimeSecs: Int?,
 ) {
     val shimmerColor = MaterialTheme.colorScheme.primary
+    val messageText =
+        remember(message.renderedMessage, isStreaming, shimmerColor) {
+            if (isStreaming) {
+                message.renderedMessage.withStreamingCursor(shimmerColor.toArgb())
+            } else {
+                message.renderedMessage
+            }
+        }
     val streamingShimmer =
         if (isStreaming) {
             val transition = rememberInfiniteTransition(label = "streaming_shimmer")
@@ -305,14 +314,7 @@ private fun LLMMessageListItem(
                     modifier = Modifier.padding(14.dp),
                     textColor = MaterialTheme.colorScheme.onSurface.toArgb(),
                     textSize = 16f,
-                    message =
-                        if (isStreaming) {
-                            message.renderedMessage.withStreamingCursor(
-                                MaterialTheme.colorScheme.primary.toArgb()
-                            )
-                        } else {
-                            message.renderedMessage
-                        },
+                    message = messageText,
                     onLongClick = {
                         val messageProperties = buildMessageProperties(message.message)
                         createChatMessageOptionsDialog(

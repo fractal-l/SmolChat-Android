@@ -54,7 +54,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -72,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Edit2
@@ -98,7 +98,7 @@ class ManageCharactersActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val store = koinInject<CharacterPresetsStore>()
-            val presets by store.presets.collectAsState()
+            val presets by store.presets.collectAsStateWithLifecycle()
             CharactersScreenUI(
                 presets = presets,
                 onAddPreset = store::addPreset,
@@ -207,13 +207,18 @@ private fun CharactersScreenUI(
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                         contentPadding = PaddingValues(bottom = 24.dp),
                     ) {
-                        items(presets, key = { it.id }) { preset ->
+                        items(
+                            items = presets,
+                            key = { it.id },
+                            contentType = { "character" },
+                        ) { preset ->
                             val deleteTitle = stringResource(R.string.characters_delete_title)
                             val deleteText =
                                 stringResource(R.string.characters_delete_text, preset.name)
                             val deleteButton = stringResource(R.string.dialog_pos_delete)
                             val cancelButton = stringResource(R.string.dialog_neg_cancel)
                             CharacterItem(
+                                modifier = Modifier.animateItem(),
                                 preset = preset,
                                 onEditClick = {
                                     editingPreset = preset
@@ -267,12 +272,13 @@ private fun samplerSummary(preset: CharacterPreset): String =
 
 @Composable
 private fun CharacterItem(
+    modifier: Modifier = Modifier,
     preset: CharacterPreset,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
         colors =
             CardDefaults.cardColors(

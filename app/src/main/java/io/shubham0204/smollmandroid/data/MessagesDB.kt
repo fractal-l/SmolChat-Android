@@ -17,18 +17,17 @@
 package io.shubham0204.smollmandroid.data
 
 import android.text.Spanned
-import androidx.compose.runtime.Stable
 import androidx.core.text.toSpanned
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Ignore
 import androidx.room.Insert
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "ChatMessage")
-@Stable
+@Entity(tableName = "ChatMessage", indices = [Index("chatId")])
 data class ChatMessage(
     @PrimaryKey(autoGenerate = true) var id: Long = 0,
     var chatId: Long = 0,
@@ -40,13 +39,13 @@ data class ChatMessage(
 
 @Dao
 interface ChatMessageDao {
-    @Query("SELECT * FROM ChatMessage WHERE chatId = :chatId")
+    @Query("SELECT * FROM ChatMessage WHERE chatId = :chatId ORDER BY id ASC")
     fun getMessages(chatId: Long): Flow<List<ChatMessage>>
 
-    @Query("SELECT * FROM ChatMessage WHERE chatId = :chatId")
+    @Query("SELECT * FROM ChatMessage WHERE chatId = :chatId ORDER BY id ASC")
     suspend fun getMessagesForModel(chatId: Long): List<ChatMessage>
 
-    @Query("SELECT * FROM ChatMessage")
+    @Query("SELECT * FROM ChatMessage ORDER BY id ASC")
     suspend fun getAllMessages(): List<ChatMessage>
 
     @Insert
@@ -60,6 +59,9 @@ interface ChatMessageDao {
 
     @Query("DELETE FROM ChatMessage WHERE id = :messageId")
     suspend fun deleteMessage(messageId: Long)
+
+    @Query("DELETE FROM ChatMessage WHERE chatId IN (SELECT id FROM Chat WHERE folderId = :folderId)")
+    suspend fun deleteMessagesInFolder(folderId: Long)
 
     @Query("DELETE FROM ChatMessage WHERE chatId = :chatId AND id >= :messageId")
     suspend fun deleteMessagesFrom(chatId: Long, messageId: Long)

@@ -19,11 +19,16 @@ package io.shubham0204.smollmandroid.ui.screens.model_download
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -87,8 +92,34 @@ class DownloadModelActivity : ComponentActivity() {
                 NavHost(
                     navController = navController,
                     startDestination = DownloadModelRoute,
-                    enterTransition = { fadeIn() },
-                    exitTransition = { fadeOut() },
+                    enterTransition = {
+                        slideInHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                            initialOffsetX = { it / 8 },
+                        ) + fadeIn(tween(durationMillis = 180))
+                    },
+                    exitTransition = {
+                        slideOutHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            targetOffsetX = { -it / 12 },
+                        ) + fadeOut(tween(durationMillis = 160))
+                    },
+                    popEnterTransition = {
+                        slideInHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                            initialOffsetX = { -it / 8 },
+                        ) + fadeIn(tween(durationMillis = 180))
+                    },
+                    popExitTransition = {
+                        slideOutHorizontally(
+                            animationSpec =
+                                tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                            targetOffsetX = { it / 12 },
+                        ) + fadeOut(tween(durationMillis = 160))
+                    },
                 ) {
                     composable<ViewModelRoute>(
                         typeMap =
@@ -124,6 +155,10 @@ class DownloadModelActivity : ComponentActivity() {
                                         navController.navigate(
                                             ViewModelRoute(modelId, modelInfo, modelFiles)
                                         )
+                                    },
+                                    onError = { message ->
+                                        hideProgressDialog()
+                                        Toast.makeText(this@DownloadModelActivity, message, Toast.LENGTH_LONG).show()
                                     },
                                 )
                             },

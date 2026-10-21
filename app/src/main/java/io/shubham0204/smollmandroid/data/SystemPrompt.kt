@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class SystemPrompt(
-    val id: Long = System.currentTimeMillis(),
+    val id: Long = 0L,
     val name: String = "",
     val body: String = "",
 )

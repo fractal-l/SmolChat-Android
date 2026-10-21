@@ -20,9 +20,13 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import io.shubham0204.smollmandroid.llm.ModelsRepository
 import io.shubham0204.smollmandroid.ui.screens.chat.ChatActivity
 import io.shubham0204.smollmandroid.ui.screens.model_download.DownloadModelActivity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.koin.android.ext.android.inject
 
 class MainActivity : ComponentActivity() {
@@ -32,17 +36,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Redirect user to the DownloadModelActivity if no models are available
-        // as the app requires at least one model to function
-        if (modelsRepository.getAvailableModelsList().isEmpty()) {
-            Intent(this, DownloadModelActivity::class.java).apply {
-                startActivity(this)
-                finish()
-            }
-        } else {
-            Intent(this, ChatActivity::class.java).apply {
-                startActivity(this)
-                finish()
+        lifecycleScope.launch {
+            val hasModels =
+                withContext(Dispatchers.IO) {
+                    modelsRepository.removeMissingModels()
+                    modelsRepository.getAvailableModelsList().isNotEmpty()
+                }
+
+            // Redirect user to the DownloadModelActivity if no models are available
+            // as the app requires at least one model to function
+            if (hasModels) {
+                Intent(this@MainActivity, ChatActivity::class.java).apply {
+                    startActivity(this)
+                    finish()
+                }
+            } else {
+                Intent(this@MainActivity, DownloadModelActivity::class.java).apply {
+                    startActivity(this)
+                    finish()
+                }
             }
         }
     }

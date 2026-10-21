@@ -16,17 +16,18 @@
 
 package io.shubham0204.smollmandroid.ui.screens.chat.messages
 
-import android.graphics.Color
 import android.text.Spanned
+import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
 import android.widget.TextView
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.viewinterop.AndroidView
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun ChatMessageText(
     message: Spanned,
@@ -35,17 +36,25 @@ fun ChatMessageText(
     textColor: Int,
     onLongClick: () -> Unit,
 ) {
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.24f).toArgb()
+
     AndroidView(
-        modifier = modifier.combinedClickable(onClick = {}, onLongClick = onLongClick),
+        modifier = modifier,
         factory = {
             val textView = TextView(it)
-            textView.textSize = textSize
-            textView.setTextColor(textColor)
             textView.autoLinkMask = Linkify.WEB_URLS
-            textView.highlightColor = Color.YELLOW
+            textView.movementMethod = LinkMovementMethod.getInstance()
+            textView.setOnLongClickListener {
+                currentOnLongClick()
+                true
+            }
             textView
         },
         update = { textView ->
+            textView.textSize = textSize
+            textView.setTextColor(textColor)
+            textView.highlightColor = highlightColor
             if (textView.text !== message) {
                 textView.text = message
             }

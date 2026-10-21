@@ -1,5 +1,6 @@
 package io.shubham0204.smollmandroid.data
 
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -10,14 +11,16 @@ import org.koin.core.annotation.Single
 @Single
 class CharacterPresetsStore(private val sharedPrefStore: SharedPrefStore) {
     private val key = "character_presets"
+    private val jsonCodec = Json { ignoreUnknownKeys = true }
     private val _presets = MutableStateFlow(loadPresets())
     val presets: StateFlow<List<CharacterPreset>> = _presets.asStateFlow()
 
     private fun loadPresets(): List<CharacterPreset> {
         val json = sharedPrefStore.get(key, "[]")
         return try {
-            Json.decodeFromString<List<CharacterPreset>>(json)
+            jsonCodec.decodeFromString<List<CharacterPreset>>(json)
         } catch (e: Exception) {
+            Log.e("CharacterPresetsStore", "Could not read saved character presets", e)
             emptyList()
         }
     }
@@ -36,7 +39,7 @@ class CharacterPresetsStore(private val sharedPrefStore: SharedPrefStore) {
     }
 
     private fun savePresets(presets: List<CharacterPreset>) {
-        sharedPrefStore.put(key, Json.encodeToString(presets))
+        sharedPrefStore.put(key, jsonCodec.encodeToString(presets))
         _presets.value = presets
     }
 }

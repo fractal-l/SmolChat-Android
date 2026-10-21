@@ -217,8 +217,13 @@ fun SelectModelsList(
                 Spacer(modifier = Modifier.height(8.dp))
                 LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
                     if (sortOrder == SortOrder.NAME) {
-                        items(modelsList.sortedBy { it.name }) {
+                        items(
+                            items = modelsList.sortedBy { it.name },
+                            key = { it.id },
+                            contentType = { "model" },
+                        ) {
                             ModelListItem(
+                                modifier = Modifier.animateItem(),
                                 model = it,
                                 onModelListItemClick,
                                 onModelDeleteClick,
@@ -228,8 +233,13 @@ fun SelectModelsList(
                             )
                         }
                     } else {
-                        items(modelsList.reversed()) {
+                        items(
+                            items = modelsList.reversed(),
+                            key = { it.id },
+                            contentType = { "model" },
+                        ) {
                             ModelListItem(
+                                modifier = Modifier.animateItem(),
                                 model = it,
                                 onModelListItemClick,
                                 onModelDeleteClick,
@@ -331,6 +341,7 @@ private fun EditModel(
 
 @Composable
 private fun ModelListItem(
+    modifier: Modifier = Modifier,
     model: LLMModel,
     onModelListItemClick: (LLMModel) -> Unit,
     onModelDeleteClick: (LLMModel) -> Unit,
@@ -341,7 +352,7 @@ private fun ModelListItem(
     val context = LocalContext.current
     Card(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .padding(vertical = 3.dp)
                 .noRippleClickable { onModelListItemClick(model) },

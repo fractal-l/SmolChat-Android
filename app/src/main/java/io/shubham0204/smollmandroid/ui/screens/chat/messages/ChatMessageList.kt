@@ -38,10 +38,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -70,9 +73,19 @@ fun ColumnScope.MessagesList(
     val listState = rememberLazyListState()
     val lastUserMessageIndex = messages.indexOfLast { it.isUserMessage }
     val reversedMessages = remember(messages) { messages.reversed() }
+    var lastChatId by remember { mutableStateOf(chatId) }
+
+    LaunchedEffect(chatId) {
+        if (lastChatId != chatId) {
+            lastChatId = chatId
+            // Jump to the newest message when switching chats instead of animating through
+            // the previous chat's scroll position.
+            listState.scrollToItem(0)
+        }
+    }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
+        if (messages.isNotEmpty() && lastChatId == chatId) {
             listState.animateScrollToItem(0)
         }
     }
@@ -131,9 +144,19 @@ fun ColumnScope.MessagesList(
                 }
             }
         }
-        itemsIndexed(reversedMessages, key = { _, message -> message.id }) { i, chatMessage ->
+        itemsIndexed(
+            items = reversedMessages,
+            key = { _, message -> message.id },
+            contentType = { _, _ -> "chat_message" },
+        ) { i, chatMessage ->
             val originalIndex = messages.size - 1 - i
             MessageListItem(
+                modifier =
+                    Modifier.animateItem(
+                        fadeInSpec = tween(durationMillis = 180),
+                        placementSpec = null,
+                        fadeOutSpec = tween(durationMillis = 120),
+                    ),
                 message = chatMessage,
                 responseGenerationSpeed =
                     if (originalIndex == messages.size - 1) responseGenerationsSpeed else null,
@@ -263,10 +286,9 @@ private fun AnimatedDot(delayMillis: Int) {
         modifier =
             Modifier
                 .size(7.dp)
+                .graphicsLayer { this.alpha = alpha }
                 .clip(CircleShape)
-                .background(
-                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha)
-                )
+                .background(MaterialTheme.colorScheme.onSurfaceVariant)
     )
 }
 

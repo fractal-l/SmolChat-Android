@@ -1,9 +1,11 @@
 package io.shubham0204.smollmandroid.ui.screens.manage_asr
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.shubham0204.smollmandroid.data.SharedPrefStore
 import io.shubham0204.smollmandroid.llm.ModelsRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,11 +14,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.koin.android.annotation.KoinViewModel
 import java.io.File
-import java.io.FileInputStream
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Paths
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
+import java.nio.file.StandardCopyOption
+import java.util.zip.ZipFile
 import kotlin.io.path.pathString
 
 data class UIASRModel(
@@ -96,7 +99,12 @@ class ManageASRViewModel(
     }
 
     private fun startModelDownload(asrModel: ASRModel) {
-        _uiState.update { it.copy(downloadingModelProgress = 0) }
+        _uiState.update {
+            it.copy(
+                downloadingModelProgress = 0,
+                downloadingModelErrorMessage = null,
+            )
+        }
         downloadService.startDownload(
             asrModel.bundleDownloadUrl,
             downloadService.defaultDownloadDir,
@@ -110,21 +118,39 @@ class ManageASRViewModel(
                     val zipPath =
                         Paths.get(downloadService.defaultDownloadDir, asrModel.bundleFileName)
                             .pathString
-                    withContext(Dispatchers.IO) {
-                        unzipModel(zipPath, asrModel.name)
-                    }
-                    _uiState.update {
-                        val updatedModelsList =
-                            it.modelsList.map { uiASRModel ->
-                                if (uiASRModel.model.name == asrModel.name) {
-                                    uiASRModel.copy(isDownloaded = true)
-                                } else {
-                                    uiASRModel.copy()
+                    try {
+                        withContext(Dispatchers.IO) {
+                            unzipModel(zipPath, asrModel.name)
+                        }
+                        _uiState.update {
+                            val updatedModelsList =
+                                it.modelsList.map { uiASRModel ->
+                                    if (uiASRModel.model.name == asrModel.name) {
+                                        uiASRModel.copy(isDownloaded = true)
+                                    } else {
+                                        uiASRModel
+                                    }
                                 }
-                            }
-                        it.copy(downloadingModelProgress = null, modelsList = updatedModelsList)
+                            it.copy(
+                                downloadingModelProgress = null,
+                                downloadingModelErrorMessage = null,
+                                modelsList = updatedModelsList,
+                            )
+                        }
+                        toastNotifService.showShortToast("Model downloaded and extracted.")
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e("ManageASRViewModel", "Could not extract ASR model", e)
+                        _uiState.update {
+                            it.copy(
+                                downloadingModelProgress = null,
+                                downloadingModelErrorMessage =
+                                    e.message ?: "Could not extract the speech model.",
+                            )
+                        }
+                        toastNotifService.showLongToast("Could not extract the speech model.")
                     }
-                    toastNotifService.showShortToast("Model downloaded and extracted.")
                 }
 
             },
@@ -141,26 +167,81 @@ class ManageASRViewModel(
     }
 
     private fun unzipModel(modelZipBundlePath: String, modelName: String) {
-        val fileInputStream = FileInputStream(modelZipBundlePath)
-        val zipInputStream = ZipInputStream(fileInputStream)
-        val destDir = File(downloadService.defaultDownloadDir, modelName)
-        if (!destDir.exists()) {
-            destDir.mkdir()
+        val destDir = File(downloadService.defaultDownloadDir, modelName).canonicalFile
+        val temporaryDir =
+            File(downloadService.defaultDownloadDir, "$modelName.downloading").canonicalFile
+        if (temporaryDir.exists()) {
+            temporaryDir.deleteRecursively()
         }
-        var zipEntry: ZipEntry? = zipInputStream.getNextEntry()
-        while (zipEntry != null) {
-            if (zipEntry.name.startsWith("__MACOSX")) {
-                continue
+        if (!temporaryDir.mkdirs()) {
+            throw IOException("Could not create the model directory.")
+        }
+        val backupDir =
+            File(downloadService.defaultDownloadDir, "$modelName.previous").canonicalFile
+        if (backupDir.exists() && !backupDir.deleteRecursively()) {
+            temporaryDir.deleteRecursively()
+            throw IOException("Could not clean up a previous model download.")
+        }
+        val destinationRoot = temporaryDir.toPath()
+        var backedUp = false
+
+        try {
+            ZipFile(modelZipBundlePath).use { zipFile ->
+                for (entry in zipFile.entries()) {
+                    if (entry.name.startsWith("__MACOSX") || entry.name.isBlank()) {
+                        continue
+                    }
+                    val target = File(temporaryDir, entry.name).canonicalFile
+                    if (!target.toPath().startsWith(destinationRoot)) {
+                        throw IOException("The model archive contains an unsafe path.")
+                    }
+                    if (entry.isDirectory) {
+                        if (!target.exists() && !target.mkdirs()) {
+                            throw IOException("Could not create ${target.name}.")
+                        }
+                    } else {
+                        target.parentFile?.let { parent ->
+                            if (!parent.exists() && !parent.mkdirs()) {
+                                throw IOException("Could not create ${parent.name}.")
+                            }
+                        }
+                        zipFile.getInputStream(entry).use { input ->
+                            Files.copy(
+                                input,
+                                target.toPath(),
+                                StandardCopyOption.REPLACE_EXISTING,
+                            )
+                        }
+                    }
+                }
             }
-            Files.copy(zipInputStream, Paths.get(destDir.absolutePath, zipEntry.name))
-            zipInputStream.closeEntry()
-            zipEntry = zipInputStream.getNextEntry()
+            if (destDir.exists()) {
+                moveDirectory(destDir, backupDir)
+                backedUp = true
+            }
+            moveDirectory(temporaryDir, destDir)
+            if (backedUp) {
+                backupDir.deleteRecursively()
+            }
+            File(modelZipBundlePath).delete()
+        } catch (e: Exception) {
+            temporaryDir.deleteRecursively()
+            if (backedUp) {
+                destDir.deleteRecursively()
+                runCatching { moveDirectory(backupDir, destDir) }
+            } else {
+                destDir.deleteRecursively()
+            }
+            throw e
         }
-        zipInputStream.closeEntry()
-        zipInputStream.close()
-        fileInputStream.close()
-        // Delete the zip file after extraction
-        File(modelZipBundlePath).delete()
+    }
+
+    private fun moveDirectory(source: File, destination: File) {
+        try {
+            Files.move(source.toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (e: AtomicMoveNotSupportedException) {
+            Files.move(source.toPath(), destination.toPath())
+        }
     }
 
     private fun initializeSettingsState(): ManageASRUIState {

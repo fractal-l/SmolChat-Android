@@ -9,6 +9,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -176,9 +179,26 @@ class ManageASRActivity : ComponentActivity() {
                         contentPadding = PaddingValues(bottom = 24.dp),
                         modifier = Modifier.weight(1f),
                     ) {
-                        items(uiState.modelsList) { uiASRModel ->
-                            ASRModelItem(uiASRModel, onEvent)
+                        items(
+                            items = uiState.modelsList,
+                            key = { it.model.name },
+                            contentType = { "asr_model" },
+                        ) { uiASRModel ->
+                            ASRModelItem(
+                                modifier = Modifier.animateItem(),
+                                asrModel = uiASRModel,
+                                onEvent = onEvent,
+                            )
                         }
+                    }
+
+                    uiState.downloadingModelErrorMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(bottom = 12.dp),
+                        )
                     }
 
                     if (uiState.downloadingModelProgress != null) {
@@ -190,16 +210,26 @@ class ManageASRActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun ASRModelItem(asrModel: UIASRModel, onEvent: (ManageASRUIEvent) -> Unit) {
+    private fun ASRModelItem(
+        modifier: Modifier = Modifier,
+        asrModel: UIASRModel,
+        onEvent: (ManageASRUIEvent) -> Unit,
+    ) {
+        val containerColor by
+            animateColorAsState(
+                targetValue =
+                    if (asrModel.isEnabled) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerLow
+                    },
+                animationSpec = tween(durationMillis = 180),
+                label = "asr_model_container",
+            )
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors =
-                CardDefaults.cardColors(
-                    containerColor =
-                        if (asrModel.isEnabled) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceContainerLow
-                ),
+            colors = CardDefaults.cardColors(containerColor = containerColor),
         ) {
             Row(
                 modifier = Modifier
@@ -289,6 +319,12 @@ class ManageASRActivity : ComponentActivity() {
 
     @Composable
     private fun DownloadProgressDialog(progress: Int) {
+        val animatedProgress by
+            animateFloatAsState(
+                targetValue = progress / 100f,
+                animationSpec = tween(durationMillis = 220),
+                label = "download_progress",
+            )
         Dialog(onDismissRequest = {}) {
             Card(
                 shape = MaterialTheme.shapes.extraLarge,
@@ -321,7 +357,7 @@ class ManageASRActivity : ComponentActivity() {
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     LinearProgressIndicator(
-                        progress = { progress / 100f },
+                        progress = { animatedProgress },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(modifier = Modifier.height(8.dp))

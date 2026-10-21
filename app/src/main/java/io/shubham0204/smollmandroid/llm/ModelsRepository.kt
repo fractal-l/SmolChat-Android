@@ -26,26 +26,7 @@ import java.io.File
 
 @Single
 class ModelsRepository(private val context: Context, private val appDB: AppDB) {
-    init {
-        for (model in appDB.getModelsList()) {
-            if (!File(model.path).exists()) {
-                deleteModel(model.id)
-            }
-        }
-    }
-
-    companion object {
-        fun checkIfModelsDownloaded(context: Context): Boolean {
-            context.filesDir.listFiles()?.forEach { file ->
-                if (file.isFile && file.name.endsWith(".gguf")) {
-                    return true
-                }
-            }
-            return false
-        }
-    }
-
-    fun getModelFromId(id: Long): LLMModel = appDB.getModel(id)
+    fun getModelFromId(id: Long): LLMModel? = appDB.getModel(id)
 
     fun getAvailableModels(): Flow<List<LLMModel>> = appDB.getModels()
 
@@ -53,14 +34,21 @@ class ModelsRepository(private val context: Context, private val appDB: AppDB) {
 
     fun updateModel(model: LLMModel) = appDB.updateModel(model)
 
+    /** Removes rows for model files that were deleted outside the app. */
+    fun removeMissingModels() {
+        appDB.getModelsList()
+            .filterNot { File(it.path).isFile }
+            .forEach { deleteModel(it.id) }
+    }
+
     fun deleteModel(id: Long) {
-        appDB.getModel(id).also {
-            File(it.path).delete()
-            appDB.deleteModel(it.id)
-        }
+        val model = appDB.getModel(id) ?: return
+        appDB.deleteModel(id)
+        File(model.path).delete()
     }
 
     fun isSpeech2TextModelDownloaded(asrModel: ASRModel): Boolean {
-        return File(context.filesDir, asrModel.name).exists()
+        val modelDir = File(context.filesDir, asrModel.name)
+        return modelDir.isDirectory && modelDir.listFiles()?.isNotEmpty() == true
     }
 }

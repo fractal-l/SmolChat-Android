@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,7 +89,6 @@ data class EditableChatSettings(
     val repeatLastN: Int,
     val seed: Int,
     val contextSize: Int,
-    val isTask: Boolean,
 ) {
     companion object {
         fun fromChat(chat: Chat): EditableChatSettings {
@@ -103,7 +103,6 @@ data class EditableChatSettings(
                 repeatLastN = chat.repeatLastN,
                 seed = chat.seed,
                 contextSize = chat.contextSize,
-                isTask = chat.isTask,
             )
         }
     }
@@ -150,18 +149,23 @@ fun EditChatSettingsScreen(
     onDeleteSystemPrompt: (Long) -> Unit,
     onBackClicked: () -> Unit,
 ) {
-    var chatName by remember { mutableStateOf(settings.name) }
-    var systemPrompt by remember { mutableStateOf(settings.systemPrompt) }
-    var minP by remember { mutableFloatStateOf(settings.minP) }
-    var temperature by remember { mutableFloatStateOf(settings.temperature) }
-    var topK by remember { mutableIntStateOf(settings.topK) }
-    var topP by remember { mutableFloatStateOf(settings.topP) }
-    var repeatPenalty by remember { mutableFloatStateOf(settings.repeatPenalty) }
-    var repeatLastN by remember { mutableIntStateOf(settings.repeatLastN) }
-    var randomSeed by remember { mutableStateOf(settings.seed < 0) }
-    var seedText by remember { mutableStateOf(settings.seed.coerceAtLeast(0).toString()) }
-    var contextSize by remember { mutableIntStateOf(settings.contextSize) }
-    var takeContextSizeFromModel by remember { mutableStateOf(false) }
+    var chatName by rememberSaveable { mutableStateOf(settings.name) }
+    var systemPrompt by rememberSaveable { mutableStateOf(settings.systemPrompt) }
+    var minP by rememberSaveable { mutableFloatStateOf(settings.minP) }
+    var temperature by rememberSaveable { mutableFloatStateOf(settings.temperature) }
+    var topK by rememberSaveable { mutableIntStateOf(settings.topK) }
+    var topP by rememberSaveable { mutableFloatStateOf(settings.topP) }
+    var repeatPenalty by rememberSaveable { mutableFloatStateOf(settings.repeatPenalty) }
+    var repeatLastN by rememberSaveable { mutableIntStateOf(settings.repeatLastN) }
+    var randomSeed by rememberSaveable { mutableStateOf(settings.seed < 0) }
+    var seedText by rememberSaveable { mutableStateOf(settings.seed.coerceAtLeast(0).toString()) }
+    var contextSizeText by rememberSaveable { mutableStateOf(settings.contextSize.toString()) }
+    var takeContextSizeFromModel by rememberSaveable { mutableStateOf(false) }
+    val contextSize =
+        if (takeContextSizeFromModel) llmModelContextSize
+        else contextSizeText.toIntOrNull() ?: 0
+    val settingsValid =
+        chatName.isNotBlank() && systemPrompt.isNotBlank() && contextSize > 0
 
     var showSystemPromptsDialog by remember { mutableStateOf(false) }
     var showAddSystemPromptDialog by remember { mutableStateOf(false) }
@@ -181,6 +185,7 @@ fun EditChatSettingsScreen(
                     },
                     actions = {
                         IconButton(
+                            enabled = settingsValid,
                             onClick = {
                                 val updatedChat =
                                     settings.copy(
@@ -272,15 +277,6 @@ fun EditChatSettingsScreen(
                         }
                     },
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                if (settings.isTask) {
-                    Text(
-                        text = stringResource(R.string.chat_settings_desc_task_update),
-                        style = MaterialTheme.typography.labelSmall,
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -432,20 +428,16 @@ fun EditChatSettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     value =
                         if (takeContextSizeFromModel) {
-                            contextSize = llmModelContextSize
-                            contextSize.toString()
+                            llmModelContextSize.toString()
                         } else {
-                            contextSize.toString()
+                            contextSizeText
                         },
-                    onValueChange = {
-                        contextSize =
-                            if (it.isNotEmpty()) {
-                                it.toInt()
-                            } else {
-                                0
-                            }
+                    onValueChange = { newValue ->
+                        if (newValue.all { it.isDigit() }) {
+                            contextSizeText = newValue
+                        }
                     },
-                    isError = contextSize == 0,
+                    isError = contextSize <= 0,
                     label = {
                         if (contextSize == 0) {
                             Text(stringResource(R.string.chat_settings_err_min_ctx_size))

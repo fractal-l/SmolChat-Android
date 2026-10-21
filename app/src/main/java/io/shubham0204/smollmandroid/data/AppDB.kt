@@ -15,8 +15,8 @@ import org.koin.core.annotation.Single
 import java.util.Date
 
 @Database(
-    entities = [Chat::class, ChatMessage::class, LLMModel::class, Task::class, Folder::class],
-    version = 2,
+    entities = [Chat::class, ChatMessage::class, LLMModel::class, Folder::class],
+    version = 4,
 )
 @TypeConverters(Converters::class)
 abstract class AppRoomDatabase : RoomDatabase() {
@@ -25,8 +25,6 @@ abstract class AppRoomDatabase : RoomDatabase() {
     abstract fun chatMessagesDao(): ChatMessageDao
 
     abstract fun llmModelDao(): LLMModelDao
-
-    abstract fun taskDao(): TaskDao
 
     abstract fun folderDao(): FolderDao
 
@@ -43,6 +41,76 @@ abstract class AppRoomDatabase : RoomDatabase() {
                     db.execSQL("ALTER TABLE Chat ADD COLUMN seed INTEGER NOT NULL DEFAULT -1")
                 }
             }
+
+        val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_Chat_folderId ON Chat(folderId)"
+                    )
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_ChatMessage_chatId ON ChatMessage(chatId)"
+                    )
+                }
+            }
+
+        val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // Tasks were removed in favor of character presets. Preserve chats that were
+                    // created from tasks as ordinary chats, while dropping task definitions.
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `Chat_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `systemPrompt` TEXT NOT NULL,
+                            `dateCreated` INTEGER NOT NULL,
+                            `dateUsed` INTEGER NOT NULL,
+                            `llmModelId` INTEGER NOT NULL,
+                            `minP` REAL NOT NULL,
+                            `temperature` REAL NOT NULL,
+                            `topK` INTEGER NOT NULL DEFAULT 40,
+                            `topP` REAL NOT NULL DEFAULT 0.95,
+                            `repeatPenalty` REAL NOT NULL DEFAULT 1.1,
+                            `repeatLastN` INTEGER NOT NULL DEFAULT 64,
+                            `seed` INTEGER NOT NULL DEFAULT -1,
+                            `nThreads` INTEGER NOT NULL,
+                            `useMmap` INTEGER NOT NULL,
+                            `useMlock` INTEGER NOT NULL,
+                            `contextSize` INTEGER NOT NULL,
+                            `contextSizeConsumed` INTEGER NOT NULL,
+                            `chatTemplate` TEXT NOT NULL,
+                            `folderId` INTEGER NOT NULL
+                        )
+                        """.trimIndent()
+                    )
+                    db.execSQL(
+                        """
+                        INSERT INTO `Chat_new` (
+                            `id`, `name`, `systemPrompt`, `dateCreated`, `dateUsed`,
+                            `llmModelId`, `minP`, `temperature`, `topK`, `topP`,
+                            `repeatPenalty`, `repeatLastN`, `seed`, `nThreads`, `useMmap`,
+                            `useMlock`, `contextSize`, `contextSizeConsumed`, `chatTemplate`,
+                            `folderId`
+                        )
+                        SELECT
+                            `id`, `name`, `systemPrompt`, `dateCreated`, `dateUsed`,
+                            `llmModelId`, `minP`, `temperature`, `topK`, `topP`,
+                            `repeatPenalty`, `repeatLastN`, `seed`, `nThreads`, `useMmap`,
+                            `useMlock`, `contextSize`, `contextSizeConsumed`, `chatTemplate`,
+                            `folderId`
+                        FROM `Chat`
+                        """.trimIndent()
+                    )
+                    db.execSQL("DROP TABLE `Chat`")
+                    db.execSQL("ALTER TABLE `Chat_new` RENAME TO `Chat`")
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS `index_Chat_folderId` ON `Chat` (`folderId`)"
+                    )
+                    db.execSQL("DROP TABLE IF EXISTS `Task`")
+                }
+            }
     }
 }
 
@@ -50,24 +118,25 @@ abstract class AppRoomDatabase : RoomDatabase() {
 class AppDB(context: Context) {
     private val db =
         Room.databaseBuilder(context, AppRoomDatabase::class.java, "app-database")
-            .addMigrations(AppRoomDatabase.MIGRATION_1_2)
+            .addMigrations(
+                AppRoomDatabase.MIGRATION_1_2,
+                AppRoomDatabase.MIGRATION_2_3,
+                AppRoomDatabase.MIGRATION_3_4,
+            )
             .build()
 
     /** Get all chats from the database sorted by dateUsed in descending order. */
     fun getChats(): Flow<List<Chat>> = db.chatsDao().getChats()
 
-    fun loadDefaultChat(): Chat {
-        val defaultChat =
-            if (getChatsCount() == 0L) {
-                addChat("Untitled")
-                getRecentlyUsedChat()!!
-            } else {
-                // Given that chatsDB has at least one chat
-                // chatsDB.getRecentlyUsedChat() will never return null
-                getRecentlyUsedChat()!!
+    fun loadDefaultChat(): Chat =
+        runBlocking(Dispatchers.IO) {
+            db.withTransaction {
+                db.chatsDao().getRecentlyUsedChat()
+                    ?: newChat("Untitled").let {
+                        it.copy(id = db.chatsDao().insertChat(it))
+                    }
             }
-        return defaultChat
-    }
+        }
 
     /**
      * Get the most recently used chat from the database. This function might return null, if there
@@ -85,29 +154,44 @@ class AppDB(context: Context) {
         chatTemplate: String = "",
         systemPrompt: String = "You are a helpful assistant.",
         llmModelId: Long = -1,
-        isTask: Boolean = false,
     ): Chat =
         runBlocking(Dispatchers.IO) {
-            val newChat =
-                Chat(
-                    name = chatName,
-                    systemPrompt = systemPrompt,
-                    dateCreated = Date(),
-                    dateUsed = Date(),
-                    llmModelId = llmModelId,
-                    contextSize = 2048,
+            val chat =
+                newChat(
+                    chatName = chatName,
                     chatTemplate = chatTemplate,
-                    isTask = isTask,
+                    systemPrompt = systemPrompt,
+                    llmModelId = llmModelId,
                 )
-            val newChatId = db.chatsDao().insertChat(newChat)
-            newChat.copy(id = newChatId)
+            chat.copy(id = db.chatsDao().insertChat(chat))
         }
+
+    private fun newChat(
+        chatName: String,
+        chatTemplate: String = "",
+        systemPrompt: String = "You are a helpful assistant.",
+        llmModelId: Long = -1,
+    ) = Chat(
+        name = chatName,
+        systemPrompt = systemPrompt,
+        dateCreated = Date(),
+        dateUsed = Date(),
+        llmModelId = llmModelId,
+        contextSize = 2048,
+        chatTemplate = chatTemplate,
+    )
 
     /** Update the chat in the database. */
     fun updateChat(modifiedChat: Chat) =
         runBlocking(Dispatchers.IO) { db.chatsDao().updateChat(modifiedChat) }
 
-    fun deleteChat(chat: Chat) = runBlocking(Dispatchers.IO) { db.chatsDao().deleteChat(chat.id) }
+    fun deleteChat(chat: Chat) =
+        runBlocking(Dispatchers.IO) {
+            db.withTransaction {
+                db.chatMessagesDao().deleteMessages(chat.id)
+                db.chatsDao().deleteChat(chat.id)
+            }
+        }
 
     fun getChatsCount(): Long = runBlocking(Dispatchers.IO) { db.chatsDao().getChatsCount() }
 
@@ -163,7 +247,8 @@ class AppDB(context: Context) {
                 )
         }
 
-    fun getModel(id: Long): LLMModel = runBlocking(Dispatchers.IO) { db.llmModelDao().getModel(id) }
+    fun getModel(id: Long): LLMModel? =
+        runBlocking(Dispatchers.IO) { db.llmModelDao().getModel(id) }
 
     fun getModels(): Flow<List<LLMModel>> = db.llmModelDao().getAllModels()
 
@@ -173,23 +258,13 @@ class AppDB(context: Context) {
     fun updateModel(model: LLMModel) =
         runBlocking(Dispatchers.IO) { db.llmModelDao().updateModel(model) }
 
-    fun deleteModel(id: Long) = runBlocking(Dispatchers.IO) { db.llmModelDao().deleteModel(id) }
-
-    // Tasks
-
-    fun getTask(taskId: Long): Task = runBlocking(Dispatchers.IO) { db.taskDao().getTask(taskId) }
-
-    fun getTasks(): Flow<List<Task>> = db.taskDao().getTasks()
-
-    fun addTask(name: String, systemPrompt: String, modelId: Long) =
+    fun deleteModel(id: Long) =
         runBlocking(Dispatchers.IO) {
-            db.taskDao()
-                .insertTask(Task(name = name, systemPrompt = systemPrompt, modelId = modelId))
+            db.withTransaction {
+                db.chatsDao().clearModelReferences(id)
+                db.llmModelDao().deleteModel(id)
+            }
         }
-
-    fun deleteTask(taskId: Long) = runBlocking(Dispatchers.IO) { db.taskDao().deleteTask(taskId) }
-
-    fun updateTask(task: Task) = runBlocking(Dispatchers.IO) { db.taskDao().updateTask(task) }
 
     // Folders
 
@@ -204,24 +279,29 @@ class AppDB(context: Context) {
     /** Deletes the folder from the Folder table only */
     fun deleteFolder(folderId: Long) =
         runBlocking(Dispatchers.IO) {
-            db.folderDao().deleteFolder(folderId)
-            db.chatsDao().updateFolderIds(folderId, -1L)
+            db.withTransaction {
+                db.chatsDao().updateFolderIds(folderId, -1L)
+                db.folderDao().deleteFolder(folderId)
+            }
         }
 
     /** Deletes the folder from the Folder table and corresponding chats from the Chat table */
     fun deleteFolderWithChats(folderId: Long) =
         runBlocking(Dispatchers.IO) {
-            db.folderDao().deleteFolder(folderId)
-            db.chatsDao().deleteChatsInFolder(folderId)
+            db.withTransaction {
+                db.chatMessagesDao().deleteMessagesInFolder(folderId)
+                db.chatsDao().deleteChatsInFolder(folderId)
+                db.folderDao().deleteFolder(folderId)
+            }
         }
 
     // Import / Export
 
-    /** Builds a portable archive of all chats (excluding tasks) and their messages. */
+    /** Builds a portable archive of all chats and their messages. */
     fun createChatArchive(): ChatArchive =
         runBlocking(Dispatchers.IO) {
             val folders = db.folderDao().getAllFolders()
-            val chats = db.chatsDao().getAllChats().filterNot { it.isTask }
+            val chats = db.chatsDao().getAllChats()
             val messagesByChat = db.chatMessagesDao().getAllMessages().groupBy { it.chatId }
             ChatArchive(
                 exportedAt = System.currentTimeMillis(),
@@ -283,6 +363,7 @@ class AppDB(context: Context) {
                             }
                     folderIdMap[archivedFolder.id] = folderId
                 }
+                val importedAt = System.currentTimeMillis()
                 for (archivedChat in archive.chats) {
                     val newChatId =
                         db.chatsDao()
@@ -290,8 +371,16 @@ class AppDB(context: Context) {
                                 Chat(
                                     name = archivedChat.name.ifBlank { "Imported chat" },
                                     systemPrompt = archivedChat.systemPrompt,
-                                    dateCreated = Date(archivedChat.dateCreated.takeIf { it > 0 } ?: System.currentTimeMillis()),
-                                    dateUsed = Date(archivedChat.dateUsed.takeIf { it > 0 } ?: System.currentTimeMillis()),
+                                    dateCreated =
+                                        Date(
+                                            archivedChat.dateCreated.takeIf { it > 0 }
+                                                ?: importedAt
+                                        ),
+                                    dateUsed =
+                                        Date(
+                                            archivedChat.dateUsed.takeIf { it > 0 }
+                                                ?: importedAt
+                                        ),
                                     llmModelId = -1L,
                                     minP = archivedChat.minP,
                                     temperature = archivedChat.temperature,
@@ -303,7 +392,8 @@ class AppDB(context: Context) {
                                     nThreads = archivedChat.nThreads,
                                     useMmap = archivedChat.useMmap,
                                     useMlock = archivedChat.useMlock,
-                                    contextSize = archivedChat.contextSize,
+                                    contextSize =
+                                        archivedChat.contextSize.takeIf { it > 0 } ?: 2048,
                                     contextSizeConsumed = 0,
                                     chatTemplate = archivedChat.chatTemplate,
                                     folderId = folderIdMap[archivedChat.folderId] ?: -1L,

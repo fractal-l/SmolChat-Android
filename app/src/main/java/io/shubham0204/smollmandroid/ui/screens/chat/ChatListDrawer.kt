@@ -19,6 +19,10 @@ package io.shubham0204.smollmandroid.ui.screens.chat
 import android.content.Intent
 import android.text.format.DateUtils
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -52,6 +56,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -67,17 +72,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import compose.icons.FeatherIcons
-import compose.icons.feathericons.CheckSquare
 import compose.icons.feathericons.ChevronDown
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Cpu
 import compose.icons.feathericons.FolderPlus
-import compose.icons.feathericons.List
 import compose.icons.feathericons.MessageCircle
 import compose.icons.feathericons.Mic
 import compose.icons.feathericons.MoreVertical
 import compose.icons.feathericons.Plus
-import compose.icons.feathericons.PlusSquare
 import compose.icons.feathericons.Settings
 import compose.icons.feathericons.Users
 import io.shubham0204.smollmandroid.R
@@ -92,7 +94,6 @@ import io.shubham0204.smollmandroid.ui.preview.dummyFolders
 import io.shubham0204.smollmandroid.ui.screens.chat.dialogs.createFolderOptionsDialog
 import io.shubham0204.smollmandroid.ui.screens.manage_asr.ManageASRActivity
 import io.shubham0204.smollmandroid.ui.screens.manage_characters.ManageCharactersActivity
-import io.shubham0204.smollmandroid.ui.screens.manage_tasks.ManageTasksActivity
 import io.shubham0204.smollmandroid.ui.screens.settings.SettingsActivity
 import kotlinx.collections.immutable.ImmutableList
 import kotlinx.collections.immutable.toImmutableList
@@ -105,7 +106,6 @@ private fun PreviewChatsAndFoldersList() {
             currentChat = dummyChats[0],
             chats = dummyChats.toImmutableList(),
             folders = dummyFolders.toImmutableList(),
-            onManageTasksClick = {},
             onItemClick = {},
             onDeleteFolderClick = {},
             onDeleteFolderWithChatsClick = {},
@@ -166,7 +166,7 @@ fun DrawerUI(
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        text = "On-device AI",
+                        text = stringResource(R.string.chat_drawer_on_device_ai),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -200,44 +200,12 @@ fun DrawerUI(
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
-                FilledTonalButton(
-                    onClick = {
-                        onCloseDrawer()
-                        onEvent(
-                            ChatScreenUIEvent.DialogEvents.ToggleTaskListBottomList(visible = true)
-                        )
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors =
-                        ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
-                ) {
-                    Icon(
-                        FeatherIcons.PlusSquare,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        stringResource(R.string.chat_drawer_new_task),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
             }
             Spacer(modifier = Modifier.height(12.dp))
             ChatsAndFoldersList(
                 currentChat,
                 chats.toImmutableList(),
                 folders.toImmutableList(),
-                onManageTasksClick = {
-                    Intent(context, ManageTasksActivity::class.java).also {
-                        context.startActivity(it)
-                    }
-                    onCloseDrawer()
-                },
                 onManageASRClick = {
                     Intent(context, ManageASRActivity::class.java).also {
                         context.startActivity(it)
@@ -281,7 +249,6 @@ private fun ChatsAndFoldersList(
     currentChat: Chat?,
     chats: ImmutableList<Chat>,
     folders: ImmutableList<Folder>,
-    onManageTasksClick: () -> Unit,
     onManageASRClick: () -> Unit,
     onManageCharactersClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -293,13 +260,8 @@ private fun ChatsAndFoldersList(
 ) {
     Column {
         DrawerMenuItem(
-            icon = FeatherIcons.List,
-            label = stringResource(R.string.chat_drawer_manage_tasks),
-            onClick = onManageTasksClick,
-        )
-        DrawerMenuItem(
             icon = FeatherIcons.Mic,
-            label = "Manage Speech-to-Text",
+            label = stringResource(R.string.chat_drawer_manage_speech_to_text),
             onClick = onManageASRClick,
         )
         DrawerMenuItem(
@@ -372,7 +334,9 @@ private fun ChatsList(currentChat: Chat?, chats: ImmutableList<Chat>, onItemClic
             )
             Spacer(modifier = Modifier.height(4.dp))
         }
-        items(chats) { chat -> ChatListItem(chat, onItemClick, currentChat?.id == chat.id) }
+        items(chats, key = { it.id }, contentType = { "chat" }) { chat ->
+            ChatListItem(chat, onItemClick, currentChat?.id == chat.id)
+        }
     }
 }
 
@@ -382,6 +346,10 @@ private fun LazyItemScope.ChatListItem(
     onItemClick: (Chat) -> Unit,
     isCurrentlySelected: Boolean,
 ) {
+    val relativeTime =
+        remember(chat.dateUsed) {
+            DateUtils.getRelativeTimeSpanString(chat.dateUsed.time).toString()
+        }
     Row(
         modifier =
             Modifier
@@ -415,12 +383,7 @@ private fun LazyItemScope.ChatListItem(
             contentAlignment = Alignment.Center,
         ) {
             Icon(
-                imageVector =
-                    if (chat.isTask) {
-                        FeatherIcons.CheckSquare
-                    } else {
-                        FeatherIcons.MessageCircle
-                    },
+                imageVector = FeatherIcons.MessageCircle,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(17.dp),
@@ -429,18 +392,14 @@ private fun LazyItemScope.ChatListItem(
         Spacer(modifier = Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                if (chat.isTask) {
-                    "[Task] " + chat.name
-                } else {
-                    chat.name
-                },
+                text = chat.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (isCurrentlySelected) FontWeight.SemiBold else FontWeight.Normal,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = DateUtils.getRelativeTimeSpanString(chat.dateUsed.time).toString(),
+                text = relativeTime,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -468,6 +427,7 @@ private fun FoldersList(
     onAddFolder: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val chatsByFolder = remember(allChats) { allChats.groupBy { it.folderId } }
     Row(
         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -492,20 +452,22 @@ private fun FoldersList(
         ) {
             Icon(
                 FeatherIcons.FolderPlus,
-                contentDescription = "Add Folder",
+                contentDescription = stringResource(R.string.chat_drawer_add_folder),
                 tint = MaterialTheme.colorScheme.secondary,
             )
         }
     }
     folders.forEach { folder ->
-        FolderListItem(
-            folder = folder,
-            chatsInFolder = folder.getChats(allChats).toImmutableList(),
-            onItemClick,
-            onEditFolderNameClick = { newName -> onUpdateFolder(folder.copy(name = newName)) },
-            onDeleteFolderClick = { onDeleteFolderClick(folder) },
-            onDeleteFolderWithChatsClick = { onDeleteFolderWithChatsClick(folder) },
-        )
+        key(folder.id) {
+            FolderListItem(
+                folder = folder,
+                chatsInFolder = chatsByFolder[folder.id].orEmpty().toImmutableList(),
+                onItemClick,
+                onEditFolderNameClick = { newName -> onUpdateFolder(folder.copy(name = newName)) },
+                onDeleteFolderClick = { onDeleteFolderClick(folder) },
+                onDeleteFolderWithChatsClick = { onDeleteFolderWithChatsClick(folder) },
+            )
+        }
     }
 }
 
@@ -527,7 +489,11 @@ private fun FolderListItem(
             } else {
                 FeatherIcons.ChevronRight
             },
-            contentDescription = "",
+            contentDescription =
+                stringResource(
+                    if (expanded) R.string.chat_drawer_folder_collapse
+                    else R.string.chat_drawer_folder_expand
+                ),
             tint = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.noRippleClickable { expanded = !expanded }
         )
@@ -584,18 +550,26 @@ private fun FolderListItem(
         ) {
             Icon(
                 FeatherIcons.MoreVertical,
-                contentDescription = "Folder Options",
+                contentDescription = stringResource(R.string.chat_drawer_folder_options),
                 tint = MaterialTheme.colorScheme.secondary,
             )
         }
     }
-    AnimatedVisibility(expanded, enter = slideInVertically()) {
+    AnimatedVisibility(
+        visible = expanded,
+        enter = expandVertically() + fadeIn() + slideInVertically(initialOffsetY = { -it / 4 }),
+        exit = shrinkVertically() + fadeOut(),
+    ) {
         LazyColumn {
-            items(chatsInFolder) {
-                Row {
+            items(
+                items = chatsInFolder,
+                key = { it.id },
+                contentType = { "folder_chat" },
+            ) { chat ->
+                Row(modifier = Modifier.animateItem()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     ChatListItem(
-                        chat = it,
+                        chat = chat,
                         onItemClick = onChatItemClick,
                         isCurrentlySelected = false,
                     )
@@ -604,6 +578,3 @@ private fun FolderListItem(
         }
     }
 }
-
-private fun Folder.getChats(allChats: List<Chat>): List<Chat> =
-    allChats.filter { it.folderId == id }

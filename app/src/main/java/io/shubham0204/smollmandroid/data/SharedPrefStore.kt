@@ -4,24 +4,28 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import io.shubham0204.smollmandroid.R
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import org.koin.core.annotation.Single
 
 @Single
 class SharedPrefStore(context: Context) {
     private val sharedPreferences =
         context.getSharedPreferences(context.getString(R.string.app_name), Context.MODE_PRIVATE)
-    private val _sharedPrefStoreChanges = MutableStateFlow<String?>(null)
+    private val _sharedPrefStoreChanges = MutableSharedFlow<String>(extraBufferCapacity = 8)
     private val changeListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        _sharedPrefStoreChanges.value = key
+        if (key != null) {
+            _sharedPrefStoreChanges.tryEmit(key)
+        }
     }
-    val sharedPrefStoreChanges: StateFlow<String?> = _sharedPrefStoreChanges
+    val sharedPrefStoreChanges: SharedFlow<String> = _sharedPrefStoreChanges.asSharedFlow()
 
     init {
         sharedPreferences.registerOnSharedPreferenceChangeListener(changeListener)
     }
 
+    @Suppress("UNCHECKED_CAST")
     fun <T> get(key: String, defaultValue: T): T {
         return when (defaultValue) {
             is Boolean -> sharedPreferences.getBoolean(key, defaultValue) as T
@@ -44,9 +48,5 @@ class SharedPrefStore(context: Context) {
                 else -> throw Exception("Unsupported type")
             }
         }
-    }
-
-    fun setupChangeListener(key: String, onChange: (String, String) -> Unit) {
-
     }
 }
