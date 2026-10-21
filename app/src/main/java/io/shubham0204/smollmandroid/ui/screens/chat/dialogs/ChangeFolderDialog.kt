@@ -78,10 +78,15 @@ fun ChangeFolderDialogUI(
                         .selectableGroup()
                         .heightIn(max = 400.dp),
                 ) {
-                    items(modifiedFolders) { folder ->
+                    items(
+                        items = modifiedFolders,
+                        key = { it.id },
+                        contentType = { "folder" },
+                    ) { folder ->
                         Row(
                             modifier =
                                 Modifier
+                                    .animateItem()
                                     .fillMaxWidth()
                                     .selectable(
                                         selected = folder.id == selectedFolderId,

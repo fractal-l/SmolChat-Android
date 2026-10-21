@@ -230,8 +230,18 @@ private fun ModelList(
             }
         }
 
-        items(count = models.itemCount) { index ->
-            models[index]?.let { model -> ModelListItem(model, onModelClick = onModelClick) }
+        items(
+            count = models.itemCount,
+            key = { index -> models.peek(index)?.id ?: index },
+            contentType = { "hf_model" },
+        ) { index ->
+            models[index]?.let { model ->
+                ModelListItem(
+                    model = model,
+                    onModelClick = onModelClick,
+                    modifier = Modifier.animateItem(),
+                )
+            }
         }
 
         if (models.loadState.append is LoadState.Loading) {
@@ -289,15 +299,20 @@ private fun ModelListLoading(modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ModelListItem(model: HFModelSearch.ModelSearchResult, onModelClick: (String) -> Unit) {
+private fun ModelListItem(
+    model: HFModelSearch.ModelSearchResult,
+    onModelClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val parts = model.id.split("/")
     val modelAuthor = if (parts.size > 1) parts[0] else "Hugging Face"
     val modelName = if (parts.size > 1) parts[1] else parts[0]
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onModelClick(model.id) },
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable { onModelClick(model.id) },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow

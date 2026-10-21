@@ -180,9 +180,14 @@ fun ViewHFModelScreen(
                         description = "Pick a quantization to download. Smaller files use less memory.",
                     )
                 }
-                items(modelFileTree) { modelFile ->
+                items(
+                    items = modelFileTree,
+                    key = { it.path },
+                    contentType = { "gguf_file" },
+                ) { modelFile ->
                     GGUFModelListItem(
                         modelFile = modelFile,
+                        modifier = Modifier.animateItem(),
                         onModelFileClick = { file ->
                             createAlertDialog(
                                 dialogTitle = "Download Model",
@@ -212,12 +217,14 @@ fun ViewHFModelScreen(
 private fun GGUFModelListItem(
     modelFile: HFModelTree.HFModelFile,
     onModelFileClick: (HFModelTree.HFModelFile) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val fileSizeGB = modelFile.size / 1e+9
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onModelFileClick(modelFile) },
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .clickable { onModelFileClick(modelFile) },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerLow

@@ -551,7 +551,11 @@ private fun CharacterPresetsDialog(
                 Text(stringResource(R.string.characters_empty))
             } else {
                 LazyColumn {
-                    items(characterPresets) { preset ->
+                    items(
+                        items = characterPresets,
+                        key = { it.id },
+                        contentType = { "character_preset" },
+                    ) { preset ->
                         ListItem(
                             headlineContent = { Text(preset.name) },
                             supportingContent = {
@@ -573,6 +577,7 @@ private fun CharacterPresetsDialog(
                             },
                             modifier =
                                 Modifier
+                                    .animateItem()
                                     .fillMaxWidth()
                                     .clickable { onPresetSelected(preset) }
                         )
@@ -599,7 +604,11 @@ private fun SystemPromptsDialog(
                 Text("No system prompts saved.")
             } else {
                 LazyColumn {
-                    items(systemPrompts) { prompt ->
+                    items(
+                        items = systemPrompts,
+                        key = { it.id },
+                        contentType = { "system_prompt" },
+                    ) { prompt ->
                         ListItem(
                             headlineContent = { Text(prompt.name) },
                             supportingContent = { Text(prompt.body, maxLines = 1) },
@@ -610,6 +619,7 @@ private fun SystemPromptsDialog(
                             },
                             modifier =
                                 Modifier
+                                    .animateItem()
                                     .fillMaxWidth()
                                     .clickable { onPromptSelected(prompt.body) }
                         )
