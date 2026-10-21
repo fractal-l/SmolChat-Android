@@ -203,12 +203,19 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
     ctx_params.n_ctx = contextSize;
     ctx_params.n_batch = contextSize;
     ctx_params.n_threads = nThreads;
+    // Prompt processing has its own thread count. Leaving it unset falls back to
+    // GGML_DEFAULT_N_THREADS (4), so users who raised the thread setting still
+    // prefilled at 4 threads.
+    ctx_params.n_threads_batch = nThreads;
     ctx_params.no_perf = true; // disable performance metrics
     _ctx = llama_init_from_model(_model, ctx_params);
     if (!_ctx) {
         LOGe("llama_new_context_with_model() returned null)");
         throw std::runtime_error("llama_new_context_with_model() returned null");
     }
+    LOGi("context: n_ctx=%u n_batch=%u n_ubatch=%u threads=%d threads_batch=%d",
+         llama_n_ctx(_ctx), llama_n_batch(_ctx), llama_n_ubatch(_ctx),
+         llama_n_threads(_ctx), llama_n_threads_batch(_ctx));
 
     // create an instance of llama_sampler
     llama_sampler_chain_params sampler_params = llama_sampler_chain_default_params();
@@ -231,10 +238,12 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
     _messages.clear();
     _kvTokens.clear();
     _lastPromptTokens.clear();
+    _messageBoundaries.clear();
     _cacheValid = false;
     _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
+    _nCtxUsed = 0;
     _batch = llama_batch{};
 
     if (chatTemplate == nullptr) {
@@ -496,9 +505,20 @@ LLMInference::restoreCache(const char *path) {
         CacheMetadata& metadata = candidate.second;
         if (metadata.modelHash != _modelHash ||
             metadata.contextSize != llama_n_ctx(_ctx) ||
-            metadata.messageCount != static_cast<uint64_t>(_messages.size()) ||
             metadata.tokenCount == 0 ||
             metadata.tokenCount > llama_n_ctx(_ctx)) {
+            LOGi("restoreCache: incompatible cache (model=%s ctx=%u/%u tokens=%llu)",
+                 metadata.modelHash == _modelHash ? "match" : "mismatch",
+                 metadata.contextSize, llama_n_ctx(_ctx),
+                 static_cast<unsigned long long>(metadata.tokenCount));
+            continue;
+        }
+        // The cache may cover fewer messages than the transcript: a turn can be written to the
+        // database before the cache is persisted, and a reload must still reuse the prefix it
+        // does contain. A cache that is ahead of the transcript cannot be reconciled.
+        if (metadata.messageCount > static_cast<uint64_t>(_messages.size())) {
+            LOGi("restoreCache: cache is ahead of the transcript (%llu > %zu), skipping",
+                 static_cast<unsigned long long>(metadata.messageCount), _messages.size());
             continue;
         }
 
@@ -860,8 +880,9 @@ LLMInference::completionLoop() {
     }
     const auto decode_end = ggml_time_us();
     if (n_batch_tokens > 1) {
-        LOGi("prompt decode: %d tokens in %.1f ms", n_batch_tokens,
-             (decode_end - start) / 1000.0);
+        const double elapsedMs = (decode_end - start) / 1000.0;
+        LOGi("prompt decode: %d tokens in %.1f ms (%.1f tok/s)", n_batch_tokens,
+             elapsedMs, elapsedMs > 0 ? n_batch_tokens * 1000.0 / elapsedMs : 0.0);
     }
 
     // sample a token and check if it is an EOG (end of generation token)

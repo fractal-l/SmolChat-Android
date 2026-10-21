@@ -93,7 +93,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         onError: (Exception) -> Unit,
         onSuccess: () -> Unit,
     ) {
-        val newCachePath = cacheFileFor(chat, modelPath, params)
+        val newCachePath = cacheFileFor(chat, modelPath)
         stateLock.withLock {
             // Cancel any in-flight generation/load before replacing the native model
             val previousLoadJob = modelInitJob
@@ -176,10 +176,15 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         }
     }
 
+    /**
+     * Names the persisted KV cache for a chat. Only the identity of the model file and the context
+     * size take part in the name: the restored cache is validated against the model and context in
+     * native code, and every turn compares the prompt token by token, so a changed chat template or
+     * system prompt reuses the prefix that both prompts share instead of throwing the cache away.
+     */
     private fun cacheFileFor(
         chat: Chat,
         modelPath: String,
-        params: SmolLM.InferenceParams,
     ): File {
         val modelFile = File(modelPath)
         val cacheKey =
@@ -187,8 +192,6 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                 append(chat.id)
                 append('_').append(chat.llmModelId)
                 append('_').append(chat.contextSize)
-                append('_').append(chat.systemPrompt.hashCode())
-                append('_').append(params.chatTemplate.orEmpty().hashCode())
                 append('_').append(modelFile.length())
                 append('_').append(modelFile.lastModified())
             }
@@ -198,6 +201,26 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
 
     private fun saveCacheToDisk(path: String): Boolean =
         cacheLock.withLock { instance.saveCache(path) }
+
+    /**
+     * Persists the cache of the loaded chat, if there is one. [chatId] guards against writing a
+     * cache whose tokens belong to a chat that is no longer loaded.
+     */
+    private fun persistCache(logMessage: String, chatId: Long? = null) {
+        stateLock.withLock {
+            val latestChat = chat
+            val latestCachePath = cachePath
+            if (!isInstanceLoaded.get() || latestChat == null || latestCachePath == null) {
+                return
+            }
+            if (chatId != null && latestChat.id != chatId) {
+                return
+            }
+            if (saveCacheToDisk(latestCachePath)) {
+                LOGD(logMessage)
+            }
+        }
+    }
 
     private fun restoreCacheFromDisk(path: String): Boolean =
         cacheLock.withLock { instance.restoreCache(path) }
@@ -397,18 +420,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         // Persist every completed turn. Waiting until unload is
                         // unsafe when the process is killed or crashes after the
                         // response has already been written to the database.
-                        stateLock.withLock {
-                            val latestChat = chat
-                            val latestCachePath = cachePath
-                            if (isInstanceLoaded.get() &&
-                                latestChat?.id == currentChat.id &&
-                                latestCachePath != null
-                            ) {
-                                if (saveCacheToDisk(latestCachePath)) {
-                                    LOGD("KV cache saved after response")
-                                }
-                            }
-                        }
+                        persistCache("KV cache saved after response", currentChat.id)
                     }
 
                     withContext(Dispatchers.Main) {
@@ -425,11 +437,17 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     }
                 } catch (e: CancellationException) {
                     isInferenceOn = false
+                    // The interrupted turn was trimmed back to its prompt prefix, so persist it: a
+                    // reload right after a cancel can then restore the conversation instead of
+                    // re-prefilling it from scratch.
+                    persistCache("KV cache saved after cancel")
                     withContext(Dispatchers.Main) {
                         onCancelled()
                     }
                 } catch (e: Exception) {
                     isInferenceOn = false
+                    // A failed turn keeps the same reusable prompt prefix as a cancelled one.
+                    persistCache("KV cache saved after error")
                     withContext(Dispatchers.Main) {
                         onError(e)
                     }
