@@ -145,6 +145,9 @@ interface ChatsDao {
     @Query("SELECT * FROM Chat WHERE id = :chatId")
     fun getChat(chatId: Long): Chat?
 
+    @Query("SELECT EXISTS(SELECT 1 FROM Chat WHERE id = :chatId)")
+    suspend fun chatExists(chatId: Long): Boolean
+
     @Query(
         "UPDATE Chat SET llmModelId = -1, contextSizeConsumed = 0 WHERE llmModelId = :modelId"
     )

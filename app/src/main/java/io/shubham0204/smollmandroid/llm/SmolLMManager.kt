@@ -118,7 +118,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousResetJob?.join()
                         previousBenchmarkJob?.join()
                         if (previousChat != null && previousCachePath != null) {
-                            if (saveCacheToDisk(previousCachePath)) {
+                            if (saveCacheForChat(previousCachePath, previousChat)) {
                                 LOGD("Previous KV cache saved")
                             }
                         }
@@ -127,6 +127,11 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         // the old model's memory is leaked.
                         instance.close()
                         isInstanceLoaded.set(false)
+                        // Do not leave the previous chat/cache path attached to a closed
+                        // native instance. If the load below fails, a later load would try
+                        // to save a cache through a null handle.
+                        this@SmolLMManager.chat = null
+                        this@SmolLMManager.cachePath = null
                         instance.load(modelPath, params)
                         this@SmolLMManager.chat = chat
                         this@SmolLMManager.cachePath = newCachePath?.absolutePath
@@ -165,6 +170,14 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         throw e
                     } catch (e: Exception) {
                         LOGD("Error loading model: ${e.message}")
+                        this@SmolLMManager.chat = null
+                        this@SmolLMManager.cachePath = null
+                        isInstanceLoaded.set(false)
+                        try {
+                            instance.close()
+                        } catch (closeError: Exception) {
+                            LOGD("Error closing failed model instance: ${closeError.message}")
+                        }
                         withContext(Dispatchers.Main) {
                             onError(e)
                         }
@@ -199,8 +212,34 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
         return File(cacheDir, "$cacheKey.seq")
     }
 
-    private fun saveCacheToDisk(path: String): Boolean =
-        cacheLock.withLock { instance.saveCache(path) }
+    /**
+     * Saves a cache only when its native transcript covers exactly the messages persisted for
+     * [chat]. A response can finish natively just as a chat is unloaded or cancelled, before its
+     * assistant row reaches the database; saving that cache unchanged would leave it ahead of the
+     * transcript and make the next load discard it.
+     *
+     * Use the loaded [chat] object rather than re-reading the row: chat settings are written to the
+     * database before the old native instance is unloaded, so the row can already describe the next
+     * system prompt while the native transcript still contains the previous one.
+     */
+    private fun saveCacheForChat(path: String, chat: Chat): Boolean =
+        try {
+            // The native transcript also contains the system prompt when it is
+            // non-empty, so include it when matching the persisted message count.
+            val messageCount =
+                (if (chat.systemPrompt.isNotEmpty()) 1 else 0) +
+                    appDB.getMessagesForModel(chat.id).size
+            cacheLock.withLock {
+                if (!instance.trimToMessageCount(messageCount)) {
+                    LOGD("KV cache not saved: native transcript is out of sync with chat")
+                    return@withLock false
+                }
+                instance.saveCache(path)
+            }
+        } catch (e: Exception) {
+            LOGD("Error saving KV cache: ${e.message}")
+            false
+        }
 
     /**
      * Persists the cache of the loaded chat, if there is one. [chatId] guards against writing a
@@ -216,7 +255,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
             if (chatId != null && latestChat.id != chatId) {
                 return
             }
-            if (saveCacheToDisk(latestCachePath)) {
+            if (saveCacheForChat(latestCachePath, latestChat)) {
                 LOGD(logMessage)
             }
         }
@@ -277,7 +316,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         // with a different message list.
                         val currentCachePath = cachePath
                         if (currentCachePath != null && isInstanceLoaded.get()) {
-                            if (saveCacheToDisk(currentCachePath)) {
+                            if (saveCacheForChat(currentCachePath, chat)) {
                                 LOGD("KV cache saved after reset")
                             }
                         }
@@ -335,7 +374,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousResetJob?.join()
                         previousBenchmarkJob?.join()
                         if (wasLoaded && currentChat != null && currentCachePath != null) {
-                            if (saveCacheToDisk(currentCachePath)) {
+                            if (saveCacheForChat(currentCachePath, currentChat)) {
                                 LOGD("KV cache saved before unload")
                             } else {
                                 LOGD("No clean KV cache to save before unload")
@@ -356,7 +395,6 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     @OptIn(FlowPreview::class)
     fun getResponse(
         query: String,
-        responseTransform: (String) -> String,
         onPartialResponseGenerated: (String) -> Unit,
         onSuccess: (SmolLMResponse) -> Unit,
         onCancelled: () -> Unit,
@@ -368,6 +406,12 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                 onError(IllegalStateException("Model not loaded"))
                 return
             }
+            val generationChatId =
+                chat?.id
+                    ?: run {
+                        onError(IllegalStateException("No chat loaded"))
+                        return
+                    }
 
             // Cancel any existing response generation and wait for it to stop
             // before touching the native instance again.
@@ -401,26 +445,28 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                             }
                     }
 
-                    var response = responseBuilder.toString()
+                    val response = responseBuilder.toString()
                     if (response.isNotEmpty() && response != lastDispatchedResponse) {
                         withContext(Dispatchers.Main) {
                             onPartialResponseGenerated(response)
                         }
                     }
 
-                    response = responseTransform(response)
-
-                    // Thread-safe access to chat
-                    val currentChat = stateLock.withLock { chat }
-
-                    if (currentChat != null) {
-                        // Add response to database
-                        appDB.addAssistantMessage(currentChat.id, response)
-
+                    // Store the exact text appended to the native conversation. Presentation
+                    // transforms (such as highlighting <think> blocks) must happen while
+                    // rendering: changing the persisted text would make a restored transcript
+                    // disagree with the token prefix saved in the KV cache.
+                    //
+                    // Use the chat that started this generation rather than whatever is loaded
+                    // now. An unload can clear `chat` while this response is finishing; skipping
+                    // the insert in that case would leave the native cache ahead of the database
+                    // and force a full re-prefill on the next load. The unload path joins this
+                    // job before saving, so the row still lands before the cache file.
+                    if (appDB.addAssistantMessage(generationChatId, response)) {
                         // Persist every completed turn. Waiting until unload is
                         // unsafe when the process is killed or crashes after the
                         // response has already been written to the database.
-                        persistCache("KV cache saved after response", currentChat.id)
+                        persistCache("KV cache saved after response", generationChatId)
                     }
 
                     withContext(Dispatchers.Main) {
@@ -440,14 +486,14 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     // The interrupted turn was trimmed back to its prompt prefix, so persist it: a
                     // reload right after a cancel can then restore the conversation instead of
                     // re-prefilling it from scratch.
-                    persistCache("KV cache saved after cancel")
+                    persistCache("KV cache saved after cancel", generationChatId)
                     withContext(Dispatchers.Main) {
                         onCancelled()
                     }
                 } catch (e: Exception) {
                     isInferenceOn = false
                     // A failed turn keeps the same reusable prompt prefix as a cancelled one.
-                    persistCache("KV cache saved after error")
+                    persistCache("KV cache saved after error", generationChatId)
                     withContext(Dispatchers.Main) {
                         onError(e)
                     }

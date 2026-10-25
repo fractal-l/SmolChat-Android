@@ -71,9 +71,28 @@ import kotlin.time.Duration.Companion.milliseconds
 private const val LOGTAG = "[SmolLMAndroid-Kt]"
 private val LOGD: (String) -> Unit = { Log.d(LOGTAG, it) }
 
+private val findReasoningContentRegex =
+    Regex(
+        "<think>(.*?)</think>|<\\|channel>thought\\s*(.*?)\\s*<channel\\|>",
+        RegexOption.DOT_MATCHES_ALL,
+    )
 private val findThinkHtmlBlockRegex = Regex("<blockquote><i><h6>[\\s\\S]*?</i></h6></blockquote>")
 private val untitledChatNameRegex = Regex("^Untitled(?: \\d+)?$")
-internal fun String.stripThinkingForClipboard() = findThinkHtmlBlockRegex.replace(this, "").trim()
+
+/** Styles raw model reasoning without changing the text that gets persisted. */
+internal fun String.withThinkBlocksForDisplay(): String =
+    findReasoningContentRegex.replace(this) { matchResult ->
+        val reasoning =
+            matchResult.groupValues.drop(1).firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        if (reasoning.isEmpty()) {
+            ""
+        } else {
+            "<blockquote><i><h6>$reasoning</i></h6></blockquote>"
+        }
+    }
+
+internal fun String.stripThinkingForClipboard(): String =
+    replace(findThinkHtmlBlockRegex, "").replace(findReasoningContentRegex, "").trim()
 
 sealed class ChatScreenUIEvent {
     sealed class ChatEvents {
@@ -218,9 +237,6 @@ class ChatScreenViewModel(
     fun consumeQuestionTextDefaultVal(): String? =
         questionTextDefaultVal.also { questionTextDefaultVal = null }
 
-    // regex to replace <think> tags with <blockquote>
-    // to render them correctly in Markdown
-    private val findThinkTagRegex = Regex("<think>(.*?)</think>", RegexOption.DOT_MATCHES_ALL)
     private var activityManager: ActivityManager
 
     init {
@@ -693,7 +709,10 @@ class ChatScreenViewModel(
                                                     if (chatMessage.isUserMessage) {
                                                         SpannableString(chatMessage.message)
                                                     } else {
-                                                        mdRenderer.render(chatMessage.message)
+                                                        mdRenderer.render(
+                                                            chatMessage.message
+                                                                .withThinkBlocksForDisplay()
+                                                        )
                                                     }
                                                 renderedMessageCache.put(
                                                     chatMessage.id,
@@ -865,13 +884,6 @@ class ChatScreenViewModel(
         startPartialRendering()
         smolLMManager.getResponse(
             query,
-            responseTransform = {
-                // Replace <think> tags with <blockquote> tags
-                // to get a neat Markdown rendering
-                findThinkTagRegex.replace(it) { matchResult ->
-                    "<blockquote><i><h6>${matchResult.groupValues[1].trim()}</i></h6></blockquote>"
-                }
-            },
             onPartialResponseGenerated = { resp ->
                 if (token == generationToken) {
                     partialResponseText.value = resp
@@ -949,7 +961,7 @@ class ChatScreenViewModel(
                         if (text.isBlank()) return@collect
                         val rendered =
                             withContext(Dispatchers.Default) {
-                                mdRenderer.render(text)
+                                mdRenderer.render(text.withThinkBlocksForDisplay())
                             }
                         _renderedPartialResponse.value = rendered
                     }

@@ -214,12 +214,26 @@ class AppDB(context: Context) {
                 )
         }
 
-    fun addAssistantMessage(chatId: Long, message: String) =
+    /**
+     * Inserts an assistant message only while its chat still exists. The chat can be deleted while
+     * a response is finishing; checking and inserting in one transaction avoids leaving an orphan
+     * message behind.
+     */
+    fun addAssistantMessage(
+        chatId: Long,
+        message: String,
+    ): Boolean =
         runBlocking(Dispatchers.IO) {
-            db.chatMessagesDao()
-                .insertMessage(
-                    ChatMessage(chatId = chatId, message = message, isUserMessage = false)
-                )
+            db.withTransaction {
+                if (!db.chatsDao().chatExists(chatId)) {
+                    return@withTransaction false
+                }
+                db.chatMessagesDao()
+                    .insertMessage(
+                        ChatMessage(chatId = chatId, message = message, isUserMessage = false)
+                    )
+                true
+            }
         }
 
     fun deleteMessage(messageId: Long) =

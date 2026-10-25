@@ -254,6 +254,7 @@ class ChatActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         if (modelUnloaded) {
+            modelUnloaded = false
             viewModel.loadModel()
             LOGD("onStart() called - model loaded")
         }

@@ -33,7 +33,8 @@ struct CacheMetadata {
     std::map<size_t, size_t> boundaries;
 };
 
-uint64_t hashBytes(uint64_t hash, const void* data, size_t size) {
+uint64_t
+hashBytes(uint64_t hash, const void* data, size_t size) {
     const auto* bytes = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i < size; ++i) {
         hash ^= bytes[i];
@@ -42,9 +43,8 @@ uint64_t hashBytes(uint64_t hash, const void* data, size_t size) {
     return hash;
 }
 
-uint64_t hashCache(
-    const std::vector<llama_token>& tokens,
-    const std::map<size_t, size_t>& boundaries) {
+uint64_t
+hashCache(const std::vector<llama_token>& tokens, const std::map<size_t, size_t>& boundaries) {
     uint64_t hash = kFnvOffset;
     if (!tokens.empty()) {
         hash = hashBytes(hash, tokens.data(), tokens.size() * sizeof(llama_token));
@@ -59,32 +59,39 @@ uint64_t hashCache(
     return hash;
 }
 
-bool writeU32(FILE* file, uint32_t value) {
+bool
+writeU32(FILE* file, uint32_t value) {
     return fwrite(&value, sizeof(value), 1, file) == 1;
 }
 
-bool writeU64(FILE* file, uint64_t value) {
+bool
+writeU64(FILE* file, uint64_t value) {
     return fwrite(&value, sizeof(value), 1, file) == 1;
 }
 
-bool readU32(FILE* file, uint32_t& value) {
+bool
+readU32(FILE* file, uint32_t& value) {
     return fread(&value, sizeof(value), 1, file) == 1;
 }
 
-bool readU64(FILE* file, uint64_t& value) {
+bool
+readU64(FILE* file, uint64_t& value) {
     return fread(&value, sizeof(value), 1, file) == 1;
 }
 
-bool fileExists(const std::string& path) {
-    struct stat info {};
+bool
+fileExists(const std::string& path) {
+    struct stat info{};
     return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode);
 }
 
-bool cacheSlotExists(const std::string& statePath) {
+bool
+cacheSlotExists(const std::string& statePath) {
     return fileExists(statePath) && fileExists(statePath + ".meta");
 }
 
-bool syncFile(const std::string& path) {
+bool
+syncFile(const std::string& path) {
     const int fd = open(path.c_str(), O_RDONLY);
     if (fd < 0) {
         return false;
@@ -94,10 +101,11 @@ bool syncFile(const std::string& path) {
     return ok;
 }
 
-void syncParentDirectory(const std::string& path) {
-    const size_t separator = path.find_last_of('/');
-    const std::string directory =
-        separator == std::string::npos ? "." : (separator == 0 ? "/" : path.substr(0, separator));
+void
+syncParentDirectory(const std::string& path) {
+    const size_t      separator = path.find_last_of('/');
+    const std::string directory
+        = separator == std::string::npos ? "." : (separator == 0 ? "/" : path.substr(0, separator));
     const int fd = open(directory.c_str(), O_RDONLY);
     if (fd < 0) {
         return;
@@ -108,28 +116,24 @@ void syncParentDirectory(const std::string& path) {
     close(fd);
 }
 
-bool readCacheMetadata(const std::string& metaPath, CacheMetadata& metadata) {
+bool
+readCacheMetadata(const std::string& metaPath, CacheMetadata& metadata) {
     FILE* file = fopen(metaPath.c_str(), "rb");
     if (!file) {
         return false;
     }
 
     uint32_t magic = 0;
-    bool ok = readU32(file, magic) && readU32(file, metadata.version);
+    bool     ok    = readU32(file, magic) && readU32(file, metadata.version);
     if (ok && metadata.version == kCacheVersion) {
         ok = readU64(file, metadata.generation);
     }
-    ok = ok && readU64(file, metadata.modelHash) &&
-         readU32(file, metadata.contextSize) &&
-         readU64(file, metadata.messageCount) &&
-         readU64(file, metadata.tokenCount) &&
-         readU64(file, metadata.savedHash) &&
-         readU64(file, metadata.boundaryCount);
+    ok = ok && readU64(file, metadata.modelHash) && readU32(file, metadata.contextSize)
+         && readU64(file, metadata.messageCount) && readU64(file, metadata.tokenCount)
+         && readU64(file, metadata.savedHash) && readU64(file, metadata.boundaryCount);
 
-    if (!ok || magic != kCacheMagic ||
-        (metadata.version != kCacheVersion &&
-         metadata.version != kLegacyCacheVersion) ||
-        metadata.boundaryCount > 100000) {
+    if (!ok || magic != kCacheMagic || (metadata.version != kCacheVersion && metadata.version != kLegacyCacheVersion)
+        || metadata.boundaryCount > 100000) {
         fclose(file);
         return false;
     }
@@ -138,29 +142,27 @@ bool readCacheMetadata(const std::string& metaPath, CacheMetadata& metadata) {
     for (uint64_t i = 0; i < metadata.boundaryCount; ++i) {
         uint64_t savedMessageCount = 0;
         uint64_t savedTokenCount   = 0;
-        if (!readU64(file, savedMessageCount) ||
-            !readU64(file, savedTokenCount) ||
-            savedMessageCount > metadata.messageCount ||
-            savedTokenCount > metadata.tokenCount) {
+        if (!readU64(file, savedMessageCount) || !readU64(file, savedTokenCount)
+            || savedMessageCount > metadata.messageCount || savedTokenCount > metadata.tokenCount) {
             boundariesOk = false;
             break;
         }
-        metadata.boundaries[static_cast<size_t>(savedMessageCount)] =
-            static_cast<size_t>(savedTokenCount);
+        metadata.boundaries[static_cast<size_t>(savedMessageCount)] = static_cast<size_t>(savedTokenCount);
     }
     fclose(file);
     return boundariesOk;
 }
 
-uint64_t readCacheGeneration(const std::string& metaPath) {
+uint64_t
+readCacheGeneration(const std::string& metaPath) {
     CacheMetadata metadata;
     return readCacheMetadata(metaPath, metadata) ? metadata.generation : 0;
 }
 } // namespace
 
 void
-LLMInference::loadModel(const char *model_path, float minP, float temperature, bool storeChats, long contextSize,
-                        const char *chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
+LLMInference::loadModel(const char* model_path, float minP, float temperature, bool storeChats, long contextSize,
+                        const char* chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
                         float repeatPenalty, int repeatLastN, int seed) {
     LOGi("loading model with"
          "\n\tmodel_path = %s"
@@ -185,66 +187,59 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
 
     // create an instance of llama_model
     llama_model_params model_params = llama_model_default_params();
-    model_params.use_mmap = useMmap;
-    model_params.use_mlock = useMlock;
-    _model = llama_model_load_from_file(model_path, model_params);
+    model_params.use_mmap           = useMmap;
+    model_params.use_mlock          = useMlock;
+    _model                          = llama_model_load_from_file(model_path, model_params);
     if (!_model) {
         LOGe("failed to load model from %s", model_path);
         throw std::runtime_error("loadModel() failed");
     }
 
-    _modelPath = model_path ? model_path : "";
-    _modelHash = hashBytes(kFnvOffset, _modelPath.data(), _modelPath.size());
+    _modelPath               = model_path ? model_path : "";
+    _modelHash               = hashBytes(kFnvOffset, _modelPath.data(), _modelPath.size());
     const uint64_t modelSize = static_cast<uint64_t>(llama_model_size(_model));
-    _modelHash = hashBytes(_modelHash, &modelSize, sizeof(modelSize));
+    _modelHash               = hashBytes(_modelHash, &modelSize, sizeof(modelSize));
 
     // create an instance of llama_context
     llama_context_params ctx_params = llama_context_default_params();
-    ctx_params.n_ctx = contextSize;
-    ctx_params.n_batch = contextSize;
-    ctx_params.n_threads = nThreads;
+    ctx_params.n_ctx                = contextSize;
+    ctx_params.n_batch              = contextSize;
+    ctx_params.n_threads            = nThreads;
     // Prompt processing has its own thread count. Leaving it unset falls back to
     // GGML_DEFAULT_N_THREADS (4), so users who raised the thread setting still
     // prefilled at 4 threads.
     ctx_params.n_threads_batch = nThreads;
-    ctx_params.no_perf = true; // disable performance metrics
-    _ctx = llama_init_from_model(_model, ctx_params);
+    ctx_params.no_perf         = true; // disable performance metrics
+    _ctx                       = llama_init_from_model(_model, ctx_params);
     if (!_ctx) {
         LOGe("llama_new_context_with_model() returned null)");
         throw std::runtime_error("llama_new_context_with_model() returned null");
     }
-    LOGi("context: n_ctx=%u n_batch=%u n_ubatch=%u threads=%d threads_batch=%d",
-         llama_n_ctx(_ctx), llama_n_batch(_ctx), llama_n_ubatch(_ctx),
-         llama_n_threads(_ctx), llama_n_threads_batch(_ctx));
+    LOGi("context: n_ctx=%u n_batch=%u n_ubatch=%u threads=%d threads_batch=%d", llama_n_ctx(_ctx), llama_n_batch(_ctx),
+         llama_n_ubatch(_ctx), llama_n_threads(_ctx), llama_n_threads_batch(_ctx));
 
     // create an instance of llama_sampler
     llama_sampler_chain_params sampler_params = llama_sampler_chain_default_params();
-    sampler_params.no_perf = true; // disable performance metrics
-    _sampler = llama_sampler_chain_init(sampler_params);
-    llama_sampler_chain_add(
-        _sampler,
-        llama_sampler_init_penalties(repeatLastN, repeatPenalty, 0.0f, 0.0f)
-    );
+    sampler_params.no_perf                    = true; // disable performance metrics
+    _sampler                                  = llama_sampler_chain_init(sampler_params);
+    llama_sampler_chain_add(_sampler, llama_sampler_init_penalties(repeatLastN, repeatPenalty, 0.0f, 0.0f));
     llama_sampler_chain_add(_sampler, llama_sampler_init_top_k(topK));
     llama_sampler_chain_add(_sampler, llama_sampler_init_top_p(topP, 1));
     llama_sampler_chain_add(_sampler, llama_sampler_init_min_p(minP, 1));
     llama_sampler_chain_add(_sampler, llama_sampler_init_temp(temperature));
-    llama_sampler_chain_add(
-        _sampler,
-        llama_sampler_init_dist(static_cast<uint32_t>(seed))
-    );
+    llama_sampler_chain_add(_sampler, llama_sampler_init_dist(static_cast<uint32_t>(seed)));
 
     _formattedMessages = std::vector<char>(llama_n_ctx(_ctx));
     _messages.clear();
     _kvTokens.clear();
     _lastPromptTokens.clear();
     _messageBoundaries.clear();
-    _cacheValid = false;
+    _cacheValid        = false;
     _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
     _nCtxUsed = 0;
-    _batch = llama_batch{};
+    _batch    = llama_batch{};
 
     if (chatTemplate == nullptr) {
         _chatTemplate = llama_model_chat_template(_model, nullptr);
@@ -255,15 +250,15 @@ LLMInference::loadModel(const char *model_path, float minP, float temperature, b
 }
 
 void
-LLMInference::addChatMessage(const char *message, const char *role) {
-    _messages.push_back({strdup(role), strdup(message)});
+LLMInference::addChatMessage(const char* message, const char* role) {
+    _messages.push_back({ strdup(role), strdup(message) });
 }
 
 void
 LLMInference::clearChat() {
-    for (llama_chat_message &message : _messages) {
-        free(const_cast<char *>(message.role));
-        free(const_cast<char *>(message.content));
+    for (llama_chat_message& message : _messages) {
+        free(const_cast<char*>(message.role));
+        free(const_cast<char*>(message.content));
     }
     _messages.clear();
     _resetContext();
@@ -288,7 +283,7 @@ LLMInference::trimToMessageCount(size_t messageCount) {
     if (!_cacheValid) {
         return false;
     }
-    const char *lastRole = _messages[messageCount - 1].role;
+    const char* lastRole = _messages[messageCount - 1].role;
     size_t      boundary = 0;
     if (strcmp(lastRole, "assistant") == 0) {
         // The cache ends with the sampled assistant response. Use the boundary
@@ -311,12 +306,12 @@ LLMInference::trimToMessageCount(size_t messageCount) {
                 msg.content = _messages[i].content;
                 keptMessages.push_back(std::move(msg));
             }
-            RenderedPrompt keptRendered = _renderPrompt(keptMessages, false);
-            std::vector<llama_token> keptTokens = common_tokenize(
-                llama_model_get_vocab(_model), keptRendered.text, /*add_special=*/true,
-                /*parse_special=*/true);
-            if (keptTokens.empty() || keptTokens.size() > _kvTokens.size() ||
-                !std::equal(keptTokens.begin(), keptTokens.end(), _kvTokens.begin())) {
+            RenderedPrompt           keptRendered = _renderPrompt(keptMessages, false);
+            std::vector<llama_token> keptTokens
+                = common_tokenize(llama_model_get_vocab(_model), keptRendered.text, /*add_special=*/true,
+                                  /*parse_special=*/true);
+            if (keptTokens.empty() || keptTokens.size() > _kvTokens.size()
+                || !std::equal(keptTokens.begin(), keptTokens.end(), _kvTokens.begin())) {
                 return false;
             }
             boundary = keptTokens.size();
@@ -329,13 +324,13 @@ LLMInference::trimToMessageCount(size_t messageCount) {
     if (boundary == 0 || boundary > _kvTokens.size()) {
         return false;
     }
-    if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos) boundary, -1)) {
+    if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos)boundary, -1)) {
         LOGi("trimToMessageCount: partial KV removal failed");
         return false;
     }
     for (size_t i = messageCount; i < _messages.size(); ++i) {
-        free(const_cast<char *>(_messages[i].role));
-        free(const_cast<char *>(_messages[i].content));
+        free(const_cast<char*>(_messages[i].role));
+        free(const_cast<char*>(_messages[i].content));
     }
     _messages.resize(messageCount);
     _kvTokens.resize(boundary);
@@ -343,8 +338,8 @@ LLMInference::trimToMessageCount(size_t messageCount) {
     // sampled assistant tokens, so the rendered-prompt fast path is not valid.
     _lastPromptTokens.clear();
     _lastResponseEmpty = false;
-    _cacheValid         = true;
-    _nCtxUsed           = (int) boundary;
+    _cacheValid        = true;
+    _nCtxUsed          = (int)boundary;
     _response.clear();
     _cacheResponseTokens.clear();
     llama_sampler_reset(_sampler);
@@ -354,16 +349,25 @@ LLMInference::trimToMessageCount(size_t messageCount) {
 }
 
 bool
-LLMInference::saveCache(const char *path) {
-    if (!path || path[0] == '\0' || !_ctx || !_storeChats || !_cacheValid ||
-        _kvTokens.empty()) {
+LLMInference::saveCache(const char* path) {
+    if (!path || path[0] == '\0' || !_ctx || !_storeChats || !_cacheValid || _kvTokens.empty()) {
+        return false;
+    }
+
+    // Never persist a token list that the context does not actually hold. A
+    // failed decode or an early stop can leave the bookkeeping ahead of the
+    // sequence memory; restoring such a cache would decode later tokens at the
+    // wrong positions.
+    const llama_pos lastPosition = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0);
+    if (lastPosition < 0 || static_cast<size_t>(lastPosition) + 1 != _kvTokens.size()) {
+        LOGe("saveCache: token list does not match decoded sequence");
         return false;
     }
 
     const std::string primaryStatePath(path);
-    const std::string primaryMetaPath  = primaryStatePath + ".meta";
-    const std::string backupStatePath  = primaryStatePath + ".bak";
-    const std::string backupMetaPath   = backupStatePath + ".meta";
+    const std::string primaryMetaPath = primaryStatePath + ".meta";
+    const std::string backupStatePath = primaryStatePath + ".bak";
+    const std::string backupMetaPath  = backupStatePath + ".meta";
 
     const bool primaryComplete = cacheSlotExists(primaryStatePath);
     const bool backupComplete  = cacheSlotExists(backupStatePath);
@@ -393,9 +397,7 @@ LLMInference::saveCache(const char *path) {
         }
     }
 
-    const uint64_t generation =
-        std::max(readCacheGeneration(primaryMetaPath),
-                 readCacheGeneration(backupMetaPath)) + 1;
+    const uint64_t generation = std::max(readCacheGeneration(primaryMetaPath), readCacheGeneration(backupMetaPath)) + 1;
     const std::string targetMetaPath = targetStatePath + ".meta";
     const std::string tempStatePath  = targetStatePath + ".tmp";
     const std::string tempMetaPath   = tempStatePath + ".meta";
@@ -403,15 +405,15 @@ LLMInference::saveCache(const char *path) {
     std::remove(tempStatePath.c_str());
     std::remove(tempMetaPath.c_str());
 
-    const size_t stateBytes = llama_state_seq_save_file(
-        _ctx, tempStatePath.c_str(), 0, _kvTokens.data(), _kvTokens.size());
+    const size_t stateBytes
+        = llama_state_seq_save_file(_ctx, tempStatePath.c_str(), 0, _kvTokens.data(), _kvTokens.size());
     if (stateBytes == 0 || !syncFile(tempStatePath)) {
         LOGe("saveCache: failed to write sequence state");
         std::remove(tempStatePath.c_str());
         return false;
     }
 
-    FILE *file = fopen(tempMetaPath.c_str(), "wb");
+    FILE* file = fopen(tempMetaPath.c_str(), "wb");
     if (!file) {
         LOGe("saveCache: failed to open metadata file");
         std::remove(tempStatePath.c_str());
@@ -419,21 +421,17 @@ LLMInference::saveCache(const char *path) {
     }
 
     const uint64_t cacheHash = hashCache(_kvTokens, _messageBoundaries);
-    bool           ok =
-        writeU32(file, kCacheMagic) &&
-        writeU32(file, kCacheVersion) &&
-        writeU64(file, generation) &&
-        writeU64(file, _modelHash) &&
-        writeU32(file, llama_n_ctx(_ctx)) &&
-        writeU64(file, static_cast<uint64_t>(_messages.size())) &&
-        writeU64(file, static_cast<uint64_t>(_kvTokens.size())) &&
-        writeU64(file, cacheHash) &&
-        writeU64(file, static_cast<uint64_t>(_messageBoundaries.size()));
+    bool           ok = writeU32(file, kCacheMagic) && writeU32(file, kCacheVersion) && writeU64(file, generation)
+              && writeU64(file, _modelHash) && writeU32(file, llama_n_ctx(_ctx))
+              && writeU64(file, static_cast<uint64_t>(_messages.size()))
+              && writeU64(file, static_cast<uint64_t>(_kvTokens.size())) && writeU64(file, cacheHash)
+              && writeU64(file, static_cast<uint64_t>(_messageBoundaries.size()));
     if (ok) {
         for (const auto& entry : _messageBoundaries) {
-            ok = writeU64(file, static_cast<uint64_t>(entry.first)) &&
-                 writeU64(file, static_cast<uint64_t>(entry.second));
-            if (!ok) break;
+            ok = writeU64(file, static_cast<uint64_t>(entry.first))
+                 && writeU64(file, static_cast<uint64_t>(entry.second));
+            if (!ok)
+                break;
         }
     }
     if (fclose(file) != 0) {
@@ -468,13 +466,13 @@ LLMInference::saveCache(const char *path) {
     std::remove((otherStatePath + ".meta").c_str());
     syncParentDirectory(otherStatePath);
 
-    LOGi("saveCache: messages=%zu kv=%zu bytes=%zu generation=%llu", _messages.size(),
-         _kvTokens.size(), stateBytes, static_cast<unsigned long long>(generation));
+    LOGi("saveCache: messages=%zu kv=%zu bytes=%zu generation=%llu", _messages.size(), _kvTokens.size(), stateBytes,
+         static_cast<unsigned long long>(generation));
     return true;
 }
 
 bool
-LLMInference::restoreCache(const char *path) {
+LLMInference::restoreCache(const char* path) {
     if (!path || path[0] == '\0' || !_ctx || !_storeChats) {
         return false;
     }
@@ -483,33 +481,26 @@ LLMInference::restoreCache(const char *path) {
     const std::string backupStatePath = primaryStatePath + ".bak";
 
     std::vector<std::pair<std::string, CacheMetadata>> candidates;
-    CacheMetadata primaryMetadata;
-    if (readCacheMetadata(primaryStatePath + ".meta", primaryMetadata) &&
-        cacheSlotExists(primaryStatePath)) {
+    CacheMetadata                                      primaryMetadata;
+    if (readCacheMetadata(primaryStatePath + ".meta", primaryMetadata) && cacheSlotExists(primaryStatePath)) {
         candidates.emplace_back(primaryStatePath, std::move(primaryMetadata));
     }
     CacheMetadata backupMetadata;
-    if (readCacheMetadata(backupStatePath + ".meta", backupMetadata) &&
-        cacheSlotExists(backupStatePath)) {
+    if (readCacheMetadata(backupStatePath + ".meta", backupMetadata) && cacheSlotExists(backupStatePath)) {
         candidates.emplace_back(backupStatePath, std::move(backupMetadata));
     }
 
     // If a crash happened after the new generation was committed but before the
     // previous one was cleaned up, restore the newest valid generation first.
     std::sort(candidates.begin(), candidates.end(),
-              [](const auto& lhs, const auto& rhs) {
-                  return lhs.second.generation > rhs.second.generation;
-              });
+              [](const auto& lhs, const auto& rhs) { return lhs.second.generation > rhs.second.generation; });
 
     for (auto& candidate : candidates) {
         CacheMetadata& metadata = candidate.second;
-        if (metadata.modelHash != _modelHash ||
-            metadata.contextSize != llama_n_ctx(_ctx) ||
-            metadata.tokenCount == 0 ||
-            metadata.tokenCount > llama_n_ctx(_ctx)) {
+        if (metadata.modelHash != _modelHash || metadata.contextSize != llama_n_ctx(_ctx) || metadata.tokenCount == 0
+            || metadata.tokenCount > llama_n_ctx(_ctx)) {
             LOGi("restoreCache: incompatible cache (model=%s ctx=%u/%u tokens=%llu)",
-                 metadata.modelHash == _modelHash ? "match" : "mismatch",
-                 metadata.contextSize, llama_n_ctx(_ctx),
+                 metadata.modelHash == _modelHash ? "match" : "mismatch", metadata.contextSize, llama_n_ctx(_ctx),
                  static_cast<unsigned long long>(metadata.tokenCount));
             continue;
         }
@@ -525,13 +516,11 @@ LLMInference::restoreCache(const char *path) {
         _resetContext();
         std::vector<llama_token> tokens(static_cast<size_t>(metadata.tokenCount));
         size_t                   loadedTokenCount = 0;
-        const size_t             stateBytes       = llama_state_seq_load_file(
-            _ctx, candidate.first.c_str(), 0, tokens.data(), tokens.size(),
-            &loadedTokenCount);
-        if (stateBytes == 0 || loadedTokenCount != metadata.tokenCount ||
-            hashCache(tokens, metadata.boundaries) != metadata.savedHash) {
-            LOGe("restoreCache: cache validation failed for %s",
-                 candidate.first.c_str());
+        const size_t             stateBytes = llama_state_seq_load_file(_ctx, candidate.first.c_str(), 0, tokens.data(),
+                                                                        tokens.size(), &loadedTokenCount);
+        if (stateBytes == 0 || loadedTokenCount != metadata.tokenCount
+            || hashCache(tokens, metadata.boundaries) != metadata.savedHash) {
+            LOGe("restoreCache: cache validation failed for %s", candidate.first.c_str());
             _resetContext();
             continue;
         }
@@ -545,16 +534,14 @@ LLMInference::restoreCache(const char *path) {
         _cacheValid        = true;
         _lastResponseEmpty = false;
         _batch             = llama_batch{};
-        _nCtxUsed =
-            llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
+        _nCtxUsed          = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
         if (_nCtxUsed <= 0) {
             _nCtxUsed = static_cast<int>(_kvTokens.size());
         }
         llama_sampler_reset(_sampler);
 
-        LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu generation=%llu",
-             _messages.size(), _kvTokens.size(), stateBytes,
-             static_cast<unsigned long long>(metadata.generation));
+        LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu generation=%llu", _messages.size(), _kvTokens.size(),
+             stateBytes, static_cast<unsigned long long>(metadata.generation));
         return true;
     }
 
@@ -575,24 +562,29 @@ LLMInference::_renderPrompt(bool addGenerationPrompt) {
 }
 
 LLMInference::RenderedPrompt
-LLMInference::_renderPrompt(
-    const std::vector<common_chat_msg>& messages, bool addGenerationPrompt) {
+LLMInference::_renderPrompt(const std::vector<common_chat_msg>& messages, bool addGenerationPrompt) {
     auto templates = common_chat_templates_init(_model, _chatTemplate ? _chatTemplate : "");
 
     common_chat_templates_inputs inputs;
     inputs.messages              = messages;
     inputs.add_generation_prompt = addGenerationPrompt;
     inputs.use_jinja             = true;
+    // llama.cpp defaults this to true. For Gemma 4 that leaves the
+    // non-thinking prompt without its empty thought channel, so the model
+    // emits those control tokens as part of the response. Keep the default
+    // for other model families until the app exposes a thinking toggle.
+    inputs.enable_thinking =
+        _chatTemplate == nullptr || strstr(_chatTemplate, "<|channel>thought") == nullptr;
     inputs.chat_template_kwargs["tools"] = "[]";
 
     RenderedPrompt rendered;
     try {
         rendered.text = common_chat_templates_apply(templates.get(), inputs).prompt;
-    } catch (const std::exception &e) {
+    } catch (const std::exception& e) {
         LOGe("Jinja template failed: %s — retrying with legacy renderer", e.what());
         inputs.use_jinja = false;
         inputs.chat_template_kwargs.clear();
-        rendered.text    = common_chat_templates_apply(templates.get(), inputs).prompt;
+        rendered.text      = common_chat_templates_apply(templates.get(), inputs).prompt;
         rendered.usedJinja = false;
     }
     return rendered;
@@ -603,7 +595,7 @@ LLMInference::_resetContext() {
     llama_memory_clear(llama_get_memory(_ctx), true);
     _kvTokens.clear();
     _lastPromptTokens.clear();
-    _cacheValid = false;
+    _cacheValid        = false;
     _lastResponseEmpty = true;
     _response.clear();
     _cacheResponseTokens.clear();
@@ -613,7 +605,7 @@ LLMInference::_resetContext() {
 
 float
 LLMInference::getResponseGenerationTime() const {
-    return (float) _responseNumTokens / (_responseGenerationTime / 1e6);
+    return (float)_responseNumTokens / (_responseGenerationTime / 1e6);
 }
 
 int
@@ -622,10 +614,10 @@ LLMInference::getContextSizeUsed() const {
 }
 
 bool
-LLMInference::startCompletion(const char *query) {
+LLMInference::startCompletion(const char* query) {
     llama_sampler_reset(_sampler);
     _responseGenerationTime = 0;
-    _responseNumTokens = 0;
+    _responseNumTokens      = 0;
     _response.clear();
     _cacheResponseTokens.clear();
 
@@ -643,12 +635,9 @@ LLMInference::startCompletion(const char *query) {
     // Tokenize the whole prompt on every turn. Reusing an exact token prefix
     // (instead of comparing rendered text) is robust against templates that
     // trim or otherwise normalize whitespace in the assistant message.
-    std::vector<llama_token> promptTokens = common_tokenize(
-        llama_model_get_vocab(_model),
-        rendered.text,
-        /*add_special=*/true,
-        /*parse_special=*/true
-    );
+    std::vector<llama_token> promptTokens = common_tokenize(llama_model_get_vocab(_model), rendered.text,
+                                                            /*add_special=*/true,
+                                                            /*parse_special=*/true);
 
     const size_t kvSize = _kvTokens.size();
 
@@ -659,14 +648,11 @@ LLMInference::startCompletion(const char *query) {
     // re-prefilling the previous response when the template renders the
     // assistant text differently (e.g. trims whitespace) from the sampled
     // tokens.
-    if (_storeChats && _cacheValid && !_lastResponseEmpty &&
-        !_lastPromptTokens.empty() &&
-        _lastPromptTokens.size() <= promptTokens.size() &&
-        std::equal(_lastPromptTokens.begin(), _lastPromptTokens.end(),
-                   promptTokens.begin()) &&
-        _messages.size() >= 2 &&
-        strcmp(_messages[_messages.size() - 1].role, "user") == 0 &&
-        strcmp(_messages[_messages.size() - 2].role, "assistant") == 0) {
+    if (_storeChats && _cacheValid && !_lastResponseEmpty && !_lastPromptTokens.empty()
+        && _lastPromptTokens.size() <= promptTokens.size()
+        && std::equal(_lastPromptTokens.begin(), _lastPromptTokens.end(), promptTokens.begin()) && _messages.size() >= 2
+        && strcmp(_messages[_messages.size() - 1].role, "user") == 0
+        && strcmp(_messages[_messages.size() - 2].role, "assistant") == 0) {
         static const std::string kSentinel = "__SMOLCHAT_ASSISTANT_SENTINEL__";
 
         std::vector<common_chat_msg> baseMessages;
@@ -682,7 +668,7 @@ LLMInference::startCompletion(const char *query) {
         RenderedPrompt prev = _renderPrompt(baseMessages, false);
 
         std::vector<common_chat_msg> nextMessages = baseMessages;
-        common_chat_msg userMessage;
+        common_chat_msg              userMessage;
         userMessage.role    = _messages.back().role;
         userMessage.content = _messages.back().content;
         nextMessages.push_back(std::move(userMessage));
@@ -690,48 +676,38 @@ LLMInference::startCompletion(const char *query) {
         RenderedPrompt next = _renderPrompt(nextMessages, true);
 
         const size_t sentinelPos = prev.text.rfind(kSentinel);
-        const bool jsonGlue = sentinelPos != std::string::npos &&
-            [&] {
-                const std::string tail = prev.text.substr(sentinelPos + kSentinel.size());
-                return tail.find('"') != std::string::npos ||
-                       tail.find('}') != std::string::npos ||
-                       tail.find(']') != std::string::npos;
-            }();
-        const bool sentinelOk =
-            sentinelPos != std::string::npos &&
-            prev.text.find(kSentinel) == sentinelPos &&
-            !jsonGlue &&
-            prev.usedJinja == rendered.usedJinja &&
-            next.usedJinja == rendered.usedJinja &&
-            next.text.size() >= prev.text.size() &&
-            next.text.compare(0, prev.text.size(), prev.text) == 0;
+        const bool   jsonGlue    = sentinelPos != std::string::npos && [&] {
+            const std::string tail = prev.text.substr(sentinelPos + kSentinel.size());
+            return tail.find('"') != std::string::npos || tail.find('}') != std::string::npos
+                   || tail.find(']') != std::string::npos;
+        }();
+        const bool sentinelOk = sentinelPos != std::string::npos && prev.text.find(kSentinel) == sentinelPos
+                                && !jsonGlue && prev.usedJinja == rendered.usedJinja
+                                && next.usedJinja == rendered.usedJinja && next.text.size() >= prev.text.size()
+                                && next.text.compare(0, prev.text.size(), prev.text) == 0;
 
         if (sentinelOk) {
-            const std::string assistantEnd = prev.text.substr(sentinelPos + kSentinel.size());
-            const std::string userTurn     = next.text.substr(prev.text.size());
-            const std::string deltaText    = assistantEnd + userTurn;
-            std::vector<llama_token> deltaTokens = common_tokenize(
-                llama_model_get_vocab(_model),
-                deltaText,
-                /*add_special=*/false,
-                /*parse_special=*/true
-            );
+            const std::string        assistantEnd = prev.text.substr(sentinelPos + kSentinel.size());
+            const std::string        userTurn     = next.text.substr(prev.text.size());
+            const std::string        deltaText    = assistantEnd + userTurn;
+            std::vector<llama_token> deltaTokens  = common_tokenize(llama_model_get_vocab(_model), deltaText,
+                                                                    /*add_special=*/false,
+                                                                    /*parse_special=*/true);
             if (!deltaTokens.empty()) {
                 _kvTokens.insert(_kvTokens.end(), deltaTokens.begin(), deltaTokens.end());
-                _promptTokens = deltaTokens;
+                _promptTokens     = deltaTokens;
                 _lastPromptTokens = promptTokens;
-                _cacheValid = false;
+                _cacheValid       = false;
 
-                _batch = llama_batch{};
-                _batch.token = _promptTokens.data();
+                _batch          = llama_batch{};
+                _batch.token    = _promptTokens.data();
                 _batch.n_tokens = _promptTokens.size();
                 if (_storeChats) {
                     _messageBoundaries[_messages.size()] = _kvTokens.size();
                 }
 
                 LOGi("startCompletion: suffix reuse, prompt=%zu kv=%zu decode=%zu, end=%zu user=%zu",
-                     promptTokens.size(), kvSize, _promptTokens.size(),
-                     assistantEnd.size(), userTurn.size());
+                     promptTokens.size(), kvSize, _promptTokens.size(), assistantEnd.size(), userTurn.size());
                 return rendered.usedJinja;
             }
         }
@@ -747,8 +723,7 @@ LLMInference::startCompletion(const char *query) {
         // Drop the cached tokens that no longer match the new prompt. If the
         // memory module cannot remove a partial sequence, start over.
         if (reuseLen > 0 && reuseLen < kvSize) {
-            if (!llama_memory_seq_rm(
-                    llama_get_memory(_ctx), 0, (llama_pos) reuseLen, -1)) {
+            if (!llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos)reuseLen, -1)) {
                 LOGi("startCompletion: partial KV removal failed, resetting");
                 reuseLen = 0;
             }
@@ -776,7 +751,7 @@ LLMInference::startCompletion(const char *query) {
     _cacheValid = false;
 
     // The KV cache already holds promptTokens[0, reuseLen).
-    _kvTokens = promptTokens;
+    _kvTokens         = promptTokens;
     _lastPromptTokens = promptTokens;
     _promptTokens.assign(promptTokens.begin() + reuseLen, promptTokens.end());
 
@@ -784,15 +759,15 @@ LLMInference::startCompletion(const char *query) {
     // in case a template ignores it.
     if (_promptTokens.empty() && !promptTokens.empty()) {
         _resetContext();
-        _kvTokens = promptTokens;
+        _kvTokens         = promptTokens;
         _lastPromptTokens = promptTokens;
-        _promptTokens = promptTokens;
+        _promptTokens     = promptTokens;
     }
 
     // create a llama_batch containing a single sequence
     // see llama_batch_init for more details
-    _batch = llama_batch{};
-    _batch.token = _promptTokens.data();
+    _batch          = llama_batch{};
+    _batch.token    = _promptTokens.data();
     _batch.n_tokens = _promptTokens.size();
     if (_storeChats && !skipUserTurn) {
         // Re-record the boundary before this user turn in the rebuilt cache so
@@ -807,20 +782,20 @@ LLMInference::startCompletion(const char *query) {
                 msg.content = _messages[i].content;
                 baseMessages.push_back(std::move(msg));
             }
-            RenderedPrompt baseRendered = _renderPrompt(baseMessages, false);
-            std::vector<llama_token> baseTokens = common_tokenize(
-                llama_model_get_vocab(_model), baseRendered.text, /*add_special=*/true,
-                /*parse_special=*/true);
-            if (!baseTokens.empty() && baseTokens.size() < promptTokens.size() &&
-                std::equal(baseTokens.begin(), baseTokens.end(), promptTokens.begin())) {
+            RenderedPrompt           baseRendered = _renderPrompt(baseMessages, false);
+            std::vector<llama_token> baseTokens
+                = common_tokenize(llama_model_get_vocab(_model), baseRendered.text, /*add_special=*/true,
+                                  /*parse_special=*/true);
+            if (!baseTokens.empty() && baseTokens.size() < promptTokens.size()
+                && std::equal(baseTokens.begin(), baseTokens.end(), promptTokens.begin())) {
                 _messageBoundaries[_messages.size() - 1] = baseTokens.size();
             }
         }
         _messageBoundaries[_messages.size()] = _kvTokens.size();
     }
 
-    LOGi("startCompletion: prompt=%zu kv=%zu reuse=%zu decode=%zu",
-         promptTokens.size(), kvSize, reuseLen, _promptTokens.size());
+    LOGi("startCompletion: prompt=%zu kv=%zu reuse=%zu decode=%zu", promptTokens.size(), kvSize, reuseLen,
+         _promptTokens.size());
 
     return rendered.usedJinja;
 }
@@ -828,12 +803,12 @@ LLMInference::startCompletion(const char *query) {
 // taken from:
 // https://github.com/ggerganov/llama.cpp/blob/master/examples/llama.android/llama/src/main/cpp/llama-android.cpp#L38
 bool
-LLMInference::_isValidUtf8(const char *response) {
+LLMInference::_isValidUtf8(const char* response) {
     if (!response) {
         return true;
     }
-    const unsigned char *bytes = (const unsigned char *) response;
-    int num;
+    const unsigned char* bytes = (const unsigned char*)response;
+    int                  num;
     while (*bytes != 0x00) {
         if ((*bytes & 0x80) == 0x00) {
             // U+0000 to U+007F
@@ -867,13 +842,13 @@ LLMInference::completionLoop() {
     // check if the length of the inputs to the model
     // have exceeded the context size of the model
     uint32_t contextSize = llama_n_ctx(_ctx);
-    _nCtxUsed = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
+    _nCtxUsed            = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
     if (_nCtxUsed + _batch.n_tokens > contextSize) {
         throw std::runtime_error("context size reached");
     }
 
     const int n_batch_tokens = _batch.n_tokens;
-    auto start = ggml_time_us();
+    auto      start          = ggml_time_us();
     // run the model
     if (llama_decode(_ctx, _batch) < 0) {
         throw std::runtime_error("llama_decode() failed");
@@ -881,8 +856,8 @@ LLMInference::completionLoop() {
     const auto decode_end = ggml_time_us();
     if (n_batch_tokens > 1) {
         const double elapsedMs = (decode_end - start) / 1000.0;
-        LOGi("prompt decode: %d tokens in %.1f ms (%.1f tok/s)", n_batch_tokens,
-             elapsedMs, elapsedMs > 0 ? n_batch_tokens * 1000.0 / elapsedMs : 0.0);
+        LOGi("prompt decode: %d tokens in %.1f ms (%.1f tok/s)", n_batch_tokens, elapsedMs,
+             elapsedMs > 0 ? n_batch_tokens * 1000.0 / elapsedMs : 0.0);
     }
 
     // sample a token and check if it is an EOG (end of generation token)
@@ -892,16 +867,20 @@ LLMInference::completionLoop() {
         addChatMessage(_response.c_str(), "assistant");
         // The KV cache now holds the prompt and every generated token, so the
         // next turn can reuse it as long as its prompt shares that prefix.
-        _lastResponseEmpty = _response.empty();
-        if (_storeChats) {
-            _cacheValid = true;
+        _lastResponseEmpty            = _response.empty();
+        const llama_pos lastPosition  = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0);
+        const size_t    decodedTokens = lastPosition >= 0 ? static_cast<size_t>(lastPosition) + 1 : 0;
+        if (_storeChats && decodedTokens == _kvTokens.size()) {
+            _cacheValid                          = true;
             _messageBoundaries[_messages.size()] = _kvTokens.size();
+        } else {
+            _cacheValid = false;
         }
         _response.clear();
         return "[EOG]";
     }
     std::string piece = common_token_to_piece(_ctx, _currToken, true);
-    auto end = ggml_time_us();
+    auto        end   = ggml_time_us();
     _responseGenerationTime += (end - start);
     _responseNumTokens += 1;
     _cacheResponseTokens += piece;
@@ -909,7 +888,7 @@ LLMInference::completionLoop() {
     // re-init the batch with the newly predicted token
     // key, value pairs of all previous tokens have been cached
     // in the KV cache
-    _batch.token = &_currToken;
+    _batch.token    = &_currToken;
     _batch.n_tokens = 1;
     // This token is decoded at the start of the next completionLoop() call.
     _kvTokens.push_back(_currToken);
@@ -940,7 +919,18 @@ LLMInference::stopCompletion() {
     // instead of re-prefilling the conversation. The aborted reply is not
     // appended to _messages: it is never persisted, and leaving it in the
     // native transcript would desync it from the database.
-    const size_t limit = std::min(_kvTokens.size(), _lastPromptTokens.size());
+    //
+    // Limit the reusable prefix to tokens actually present in the sequence.
+    // _kvTokens is filled with the whole prompt before decoding, so a decode
+    // failure can otherwise mark tokens that were never written as valid.
+    const llama_pos lastPosition  = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0);
+    const size_t    decodedTokens = lastPosition >= 0 ? static_cast<size_t>(lastPosition) + 1 : 0;
+    if (decodedTokens > _kvTokens.size()) {
+        LOGe("stopCompletion: decoded sequence is ahead of token list, resetting");
+        _resetContext();
+        return;
+    }
+    const size_t limit    = std::min(std::min(_kvTokens.size(), _lastPromptTokens.size()), decodedTokens);
     size_t       reusable = 0;
     while (reusable < limit && _kvTokens[reusable] == _lastPromptTokens[reusable]) {
         ++reusable;
@@ -952,9 +942,7 @@ LLMInference::stopCompletion() {
         return;
     }
 
-    if (reusable < _kvTokens.size() &&
-        llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) >= (llama_pos) reusable &&
-        !llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos) reusable, -1)) {
+    if (reusable < decodedTokens && !llama_memory_seq_rm(llama_get_memory(_ctx), 0, (llama_pos)reusable, -1)) {
         LOGe("stopCompletion: unable to trim KV cache, resetting");
         _resetContext();
         return;
@@ -976,16 +964,15 @@ LLMInference::stopCompletion() {
     _lastResponseEmpty = false;
     _cacheValid        = true;
     _nCtxUsed          = static_cast<int>(_kvTokens.size());
-    LOGi("stopCompletion: kept %zu cached tokens after an interrupted turn",
-         _kvTokens.size());
+    LOGi("stopCompletion: kept %zu cached tokens after an interrupted turn", _kvTokens.size());
 }
 
 LLMInference::~LLMInference() {
     // free memory held by the message text in messages
     // (as we had used strdup() to create a malloc'ed copy)
-    for (llama_chat_message &message: _messages) {
-        free(const_cast<char *>(message.role));
-        free(const_cast<char *>(message.content));
+    for (llama_chat_message& message : _messages) {
+        free(const_cast<char*>(message.role));
+        free(const_cast<char*>(message.content));
     }
     llama_free(_ctx);
     llama_model_free(_model);
