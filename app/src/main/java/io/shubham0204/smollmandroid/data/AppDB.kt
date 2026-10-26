@@ -16,7 +16,7 @@ import java.util.Date
 
 @Database(
     entities = [Chat::class, ChatMessage::class, LLMModel::class, Folder::class],
-    version = 4,
+    version = 5,
 )
 @TypeConverters(Converters::class)
 abstract class AppRoomDatabase : RoomDatabase() {
@@ -111,6 +111,15 @@ abstract class AppRoomDatabase : RoomDatabase() {
                     db.execSQL("DROP TABLE IF EXISTS `Task`")
                 }
             }
+
+        val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE Chat ADD COLUMN enableThinking INTEGER NOT NULL DEFAULT 0"
+                    )
+                }
+            }
     }
 }
 
@@ -122,6 +131,7 @@ class AppDB(context: Context) {
                 AppRoomDatabase.MIGRATION_1_2,
                 AppRoomDatabase.MIGRATION_2_3,
                 AppRoomDatabase.MIGRATION_3_4,
+                AppRoomDatabase.MIGRATION_4_5,
             )
             .build()
 
@@ -334,6 +344,7 @@ class AppDB(context: Context) {
                             repeatPenalty = chat.repeatPenalty,
                             repeatLastN = chat.repeatLastN,
                             seed = chat.seed,
+                            enableThinking = chat.enableThinking,
                             nThreads = chat.nThreads,
                             useMmap = chat.useMmap,
                             useMlock = chat.useMlock,
@@ -403,6 +414,7 @@ class AppDB(context: Context) {
                                     repeatPenalty = archivedChat.repeatPenalty,
                                     repeatLastN = archivedChat.repeatLastN,
                                     seed = archivedChat.seed,
+                                    enableThinking = archivedChat.enableThinking,
                                     nThreads = archivedChat.nThreads,
                                     useMmap = archivedChat.useMmap,
                                     useMlock = archivedChat.useMlock,

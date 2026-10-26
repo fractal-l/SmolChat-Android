@@ -43,6 +43,8 @@
     <string name="chat_settings_label_minp">min-p</string>
     <string name="chat_settings_label_sys_prompt">System Prompt</string>
     <string name="chat_settings_label_chat_name">Chat Name</string>
+    <string name="chat_settings_label_thinking">Enable thinking</string>
+    <string name="chat_settings_desc_thinking">Let reasoning models think before answering. Only models whose chat template supports thinking are affected. Changing this reloads the model.</string>
     <string name="chat_settings_take_from_gguf">Take from GGUF Model</string>
     <string name="context_size_taken_from_model">Context size taken from model</string>
     <string name="chat_settings_title_num_tokens">No. of tokens</string>

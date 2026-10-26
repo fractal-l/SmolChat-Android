@@ -32,6 +32,8 @@
     <string name="chat_settings_label_minp">min-p</string>
     <string name="chat_settings_label_sys_prompt">Prompt do Sistema</string>
     <string name="chat_settings_label_chat_name">Nome do Chat</string>
+    <string name="chat_settings_label_thinking">Permitir raciocínio</string>
+    <string name="chat_settings_desc_thinking">Deixe os modelos de raciocínio pensarem antes de responder. Apenas os modelos cujo template de chat suporta raciocínio são afetados. Alterar isto recarrega o modelo.</string>
     <string name="chat_settings_take_from_gguf">Obter do Modelo GGUF</string>
     <string name="context_size_taken_from_model">Tamanho do contexto obtido do modelo</string>
     <string name="chat_settings_title_num_tokens">Nº de tokens</string>

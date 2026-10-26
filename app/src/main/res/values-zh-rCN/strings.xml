@@ -47,6 +47,8 @@
     <string name="chat_settings_label_minp">min-p</string>
     <string name="chat_settings_label_sys_prompt">系统提示</string>
     <string name="chat_settings_label_chat_name">聊天名称</string>
+    <string name="chat_settings_label_thinking">启用思考</string>
+    <string name="chat_settings_desc_thinking">让推理模型在回答前进行思考。仅支持思考的聊天模板会受影响。更改此设置将重新加载模型。</string>
     <string name="chat_settings_take_from_gguf">从 GGUF 模型获取</string>
     <string name="context_size_taken_from_model">上下文大小取自模型</string>
     <string name="chat_settings_title_num_tokens">令牌数量</string>

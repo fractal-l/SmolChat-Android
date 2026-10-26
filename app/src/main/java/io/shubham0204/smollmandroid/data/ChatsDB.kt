@@ -82,6 +82,12 @@ data class Chat(
     @ColumnInfo(defaultValue = "1.1") var repeatPenalty: Float = 1.1f,
     @ColumnInfo(defaultValue = "64") var repeatLastN: Int = 64,
     @ColumnInfo(defaultValue = "-1") var seed: Int = -1,
+    /**
+     * Whether the chat template should enable its reasoning/thinking mode. Only templates that
+     * read `enable_thinking` are affected. Off by default so Gemma 4 does not leak its empty
+     * thought channel into the response.
+     */
+    @ColumnInfo(defaultValue = "0") var enableThinking: Boolean = false,
     // Retained for database and archive compatibility. Inference uses the
     // app-wide HardwareSettingsStore instead.
     var nThreads: Int = 4,

@@ -149,6 +149,8 @@ class SmolLM {
      * @property repeatLastN Number of recent tokens considered by the repetition penalty.
      *   (Default: 64)
      * @property seed Sampler seed. Use a negative value for a random seed. (Default: -1)
+     * @property enableThinking Enable the chat template's thinking/reasoning mode when the
+     *   template supports it. (Default: false)
      */
     data class InferenceParams(
         val minP: Float = 0.1f,
@@ -164,6 +166,7 @@ class SmolLM {
         val repeatPenalty: Float = 1.1f,
         val repeatLastN: Int = 64,
         val seed: Int = -1,
+        val enableThinking: Boolean = false,
     )
 
     /**
@@ -202,6 +205,7 @@ class SmolLM {
                     params.repeatPenalty,
                     params.repeatLastN,
                     params.seed,
+                    params.enableThinking,
                 )
         }
 
@@ -387,6 +391,7 @@ class SmolLM {
         repeatPenalty: Float,
         repeatLastN: Int,
         seed: Int,
+        enableThinking: Boolean,
     ): Long
 
     private external fun addChatMessage(modelPtr: Long, message: String, role: String)

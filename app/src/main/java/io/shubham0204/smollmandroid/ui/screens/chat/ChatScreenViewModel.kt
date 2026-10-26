@@ -296,6 +296,7 @@ class ChatScreenViewModel(
                     repeatPenalty = chat.repeatPenalty,
                     repeatLastN = chat.repeatLastN,
                     seed = chat.seed,
+                    enableThinking = chat.enableThinking,
                 ),
                 onError = { e ->
                     _uiState.update { it.copy(modelLoadingState = ModelLoadingState.FAILURE) }

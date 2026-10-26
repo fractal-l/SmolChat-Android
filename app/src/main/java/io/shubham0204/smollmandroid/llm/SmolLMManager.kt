@@ -71,6 +71,13 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     @Volatile
     private var cachePath: String? = null
 
+    // True when the native KV state contains tokens that are not in the cache
+    // file yet. The state is proportional to the context size, so rewriting it
+    // after every reply is expensive; write it when the chat is switched or
+    // unloaded instead.
+    @Volatile
+    private var cacheDirty = false
+
     // Use java.util.concurrent.atomic for better thread safety
     val isInstanceLoaded = AtomicBoolean(false)
 
@@ -117,7 +124,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousLoadJob?.join()
                         previousResetJob?.join()
                         previousBenchmarkJob?.join()
-                        if (previousChat != null && previousCachePath != null) {
+                        if (previousChat != null && previousCachePath != null && cacheDirty) {
                             if (saveCacheForChat(previousCachePath, previousChat)) {
                                 LOGD("Previous KV cache saved")
                             }
@@ -135,6 +142,10 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         instance.load(modelPath, params)
                         this@SmolLMManager.chat = chat
                         this@SmolLMManager.cachePath = newCachePath?.absolutePath
+                        // Loading the transcript does not decode any tokens. If a cache
+                        // is restored below, it is already the persisted state; otherwise
+                        // there is nothing worth writing until the first turn completes.
+                        cacheDirty = false
                         LOGD("Model loaded")
 
                         if (chat.systemPrompt.isNotEmpty()) {
@@ -172,6 +183,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         LOGD("Error loading model: ${e.message}")
                         this@SmolLMManager.chat = null
                         this@SmolLMManager.cachePath = null
+                        cacheDirty = false
                         isInstanceLoaded.set(false)
                         try {
                             instance.close()
@@ -190,10 +202,11 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
     }
 
     /**
-     * Names the persisted KV cache for a chat. Only the identity of the model file and the context
-     * size take part in the name: the restored cache is validated against the model and context in
-     * native code, and every turn compares the prompt token by token, so a changed chat template or
-     * system prompt reuses the prefix that both prompts share instead of throwing the cache away.
+     * Names the persisted KV cache for a chat. The model, context size, and thinking mode take part
+     * in the name because they change the rendered prompt. The restored cache is validated against
+     * the model and context in native code, and every turn compares the prompt token by token, so
+     * a changed chat template or system prompt reuses the prefix that both prompts share instead of
+     * throwing the cache away.
      */
     private fun cacheFileFor(
         chat: Chat,
@@ -205,6 +218,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                 append(chat.id)
                 append('_').append(chat.llmModelId)
                 append('_').append(chat.contextSize)
+                append('_').append(if (chat.enableThinking) 1 else 0)
                 append('_').append(modelFile.length())
                 append('_').append(modelFile.lastModified())
             }
@@ -222,43 +236,29 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
      * database before the old native instance is unloaded, so the row can already describe the next
      * system prompt while the native transcript still contains the previous one.
      */
-    private fun saveCacheForChat(path: String, chat: Chat): Boolean =
-        try {
-            // The native transcript also contains the system prompt when it is
-            // non-empty, so include it when matching the persisted message count.
-            val messageCount =
-                (if (chat.systemPrompt.isNotEmpty()) 1 else 0) +
-                    appDB.getMessagesForModel(chat.id).size
-            cacheLock.withLock {
-                if (!instance.trimToMessageCount(messageCount)) {
-                    LOGD("KV cache not saved: native transcript is out of sync with chat")
-                    return@withLock false
+    private fun saveCacheForChat(path: String, chat: Chat): Boolean {
+        val saved =
+            try {
+                // The native transcript also contains the system prompt when it is
+                // non-empty, so include it when matching the persisted message count.
+                val messageCount =
+                    (if (chat.systemPrompt.isNotEmpty()) 1 else 0) +
+                        appDB.getMessagesForModel(chat.id).size
+                cacheLock.withLock {
+                    if (!instance.trimToMessageCount(messageCount)) {
+                        LOGD("KV cache not saved: native transcript is out of sync with chat")
+                        return@withLock false
+                    }
+                    instance.saveCache(path)
                 }
-                instance.saveCache(path)
+            } catch (e: Exception) {
+                LOGD("Error saving KV cache: ${e.message}")
+                false
             }
-        } catch (e: Exception) {
-            LOGD("Error saving KV cache: ${e.message}")
-            false
+        if (saved) {
+            cacheDirty = false
         }
-
-    /**
-     * Persists the cache of the loaded chat, if there is one. [chatId] guards against writing a
-     * cache whose tokens belong to a chat that is no longer loaded.
-     */
-    private fun persistCache(logMessage: String, chatId: Long? = null) {
-        stateLock.withLock {
-            val latestChat = chat
-            val latestCachePath = cachePath
-            if (!isInstanceLoaded.get() || latestChat == null || latestCachePath == null) {
-                return
-            }
-            if (chatId != null && latestChat.id != chatId) {
-                return
-            }
-            if (saveCacheForChat(latestCachePath, latestChat)) {
-                LOGD(logMessage)
-            }
-        }
+        return saved
     }
 
     private fun restoreCacheFromDisk(path: String): Boolean =
@@ -290,6 +290,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousResponseJob?.join()
                         previousBenchmarkJob?.join()
                         isInferenceOn = true
+                        cacheDirty = true
                         this@SmolLMManager.chat = chat
                         val messages = appDB.getMessagesForModel(chat.id)
                         val messageCount =
@@ -373,7 +374,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         previousLoadJob?.join()
                         previousResetJob?.join()
                         previousBenchmarkJob?.join()
-                        if (wasLoaded && currentChat != null && currentCachePath != null) {
+                        if (wasLoaded && currentChat != null && currentCachePath != null && cacheDirty) {
                             if (saveCacheForChat(currentCachePath, currentChat)) {
                                 LOGD("KV cache saved before unload")
                             } else {
@@ -385,6 +386,7 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                         } catch (e: Exception) {
                             LOGD("Error closing instance: ${e.message}")
                         }
+                        cacheDirty = false
                     }
                 }
             modelInitJob = unloadJob
@@ -426,6 +428,10 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     previousBenchmarkJob?.join()
                     resetChatJob?.join()
                     isInferenceOn = true
+                    // This turn will append tokens to the native cache. Set the
+                    // flag only after the preceding reset has persisted its own
+                    // state, so its save cannot clear the flag for this turn.
+                    cacheDirty = true
                     val responseBuilder = StringBuilder()
                     var lastDispatchedResponse = ""
 
@@ -462,12 +468,12 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     // the insert in that case would leave the native cache ahead of the database
                     // and force a full re-prefill on the next load. The unload path joins this
                     // job before saving, so the row still lands before the cache file.
-                    if (appDB.addAssistantMessage(generationChatId, response)) {
-                        // Persist every completed turn. Waiting until unload is
-                        // unsafe when the process is killed or crashes after the
-                        // response has already been written to the database.
-                        persistCache("KV cache saved after response", generationChatId)
-                    }
+                    // Do not write the KV state here. It grows with the context (hundreds of
+                    // megabytes at 2K tokens for larger models), and serializing plus fsyncing it
+                    // after every reply delays the next turn and makes long chats feel slower the
+                    // longer they get. The cache is persisted when the chat is unloaded, which is
+                    // also when ChatActivity stops the model.
+                    appDB.addAssistantMessage(generationChatId, response)
 
                     withContext(Dispatchers.Main) {
                         isInferenceOn = false
@@ -483,17 +489,11 @@ class SmolLMManager(private val appDB: AppDB, private val context: Context) {
                     }
                 } catch (e: CancellationException) {
                     isInferenceOn = false
-                    // The interrupted turn was trimmed back to its prompt prefix, so persist it: a
-                    // reload right after a cancel can then restore the conversation instead of
-                    // re-prefilling it from scratch.
-                    persistCache("KV cache saved after cancel", generationChatId)
                     withContext(Dispatchers.Main) {
                         onCancelled()
                     }
                 } catch (e: Exception) {
                     isInferenceOn = false
-                    // A failed turn keeps the same reusable prompt prefix as a cancelled one.
-                    persistCache("KV cache saved after error", generationChatId)
                     withContext(Dispatchers.Main) {
                         onError(e)
                     }

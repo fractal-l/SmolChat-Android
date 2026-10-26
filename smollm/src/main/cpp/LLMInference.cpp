@@ -163,7 +163,7 @@ readCacheGeneration(const std::string& metaPath) {
 void
 LLMInference::loadModel(const char* model_path, float minP, float temperature, bool storeChats, long contextSize,
                         const char* chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
-                        float repeatPenalty, int repeatLastN, int seed) {
+                        float repeatPenalty, int repeatLastN, int seed, bool enableThinking) {
     LOGi("loading model with"
          "\n\tmodel_path = %s"
          "\n\tminP = %f"
@@ -173,14 +173,15 @@ LLMInference::loadModel(const char* model_path, float minP, float temperature, b
          "\n\trepeatPenalty = %f"
          "\n\trepeatLastN = %d"
          "\n\tseed = %d"
+         "\n\tenableThinking = %d"
          "\n\tstoreChats = %d"
          "\n\tcontextSize = %li"
          "\n\tchatTemplate = %s"
          "\n\tnThreads = %d"
          "\n\tuseMmap = %d"
          "\n\tuseMlock = %d",
-         model_path, minP, temperature, topK, topP, repeatPenalty, repeatLastN, seed, storeChats, contextSize,
-         chatTemplate, nThreads, useMmap, useMlock);
+         model_path, minP, temperature, topK, topP, repeatPenalty, repeatLastN, seed, enableThinking, storeChats,
+         contextSize, chatTemplate, nThreads, useMmap, useMlock);
 
     // load dynamic backends
     ggml_backend_load_all();
@@ -246,7 +247,8 @@ LLMInference::loadModel(const char* model_path, float minP, float temperature, b
     } else {
         _chatTemplate = strdup(chatTemplate);
     }
-    this->_storeChats = storeChats;
+    this->_storeChats     = storeChats;
+    this->_enableThinking = enableThinking;
 }
 
 void
@@ -527,21 +529,21 @@ LLMInference::restoreCache(const char* path) {
 
         _kvTokens          = std::move(tokens);
         _messageBoundaries = std::move(metadata.boundaries);
-        _lastPromptTokens.clear();
         _promptTokens.clear();
         _response.clear();
         _cacheResponseTokens.clear();
-        _cacheValid        = true;
-        _lastResponseEmpty = false;
-        _batch             = llama_batch{};
-        _nCtxUsed          = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
+        _cacheValid = true;
+        _batch      = llama_batch{};
+        _nCtxUsed   = llama_memory_seq_pos_max(llama_get_memory(_ctx), 0) + 1;
         if (_nCtxUsed <= 0) {
             _nCtxUsed = static_cast<int>(_kvTokens.size());
         }
+        _rebuildLastPromptState(static_cast<size_t>(metadata.messageCount));
         llama_sampler_reset(_sampler);
 
-        LOGi("restoreCache: messages=%zu kv=%zu bytes=%zu generation=%llu", _messages.size(), _kvTokens.size(),
-             stateBytes, static_cast<unsigned long long>(metadata.generation));
+        LOGi("restoreCache: messages=%zu kv=%zu prompt=%zu bytes=%zu generation=%llu", _messages.size(),
+             _kvTokens.size(), _lastPromptTokens.size(), stateBytes,
+             static_cast<unsigned long long>(metadata.generation));
         return true;
     }
 
@@ -569,12 +571,10 @@ LLMInference::_renderPrompt(const std::vector<common_chat_msg>& messages, bool a
     inputs.messages              = messages;
     inputs.add_generation_prompt = addGenerationPrompt;
     inputs.use_jinja             = true;
-    // llama.cpp defaults this to true. For Gemma 4 that leaves the
-    // non-thinking prompt without its empty thought channel, so the model
-    // emits those control tokens as part of the response. Keep the default
-    // for other model families until the app exposes a thinking toggle.
-    inputs.enable_thinking =
-        _chatTemplate == nullptr || strstr(_chatTemplate, "<|channel>thought") == nullptr;
+    // The app exposes this as a per-chat setting. Templates that do not use
+    // `enable_thinking` ignore it; Gemma 4 uses it to include or omit its
+    // empty thought channel in the generation prompt.
+    inputs.enable_thinking               = _enableThinking;
     inputs.chat_template_kwargs["tools"] = "[]";
 
     RenderedPrompt rendered;
@@ -588,6 +588,52 @@ LLMInference::_renderPrompt(const std::vector<common_chat_msg>& messages, bool a
         rendered.usedJinja = false;
     }
     return rendered;
+}
+
+void
+LLMInference::_rebuildLastPromptState(size_t messageCount) {
+    _lastPromptTokens.clear();
+    _lastResponseEmpty = false;
+
+    // Only a cache that ends exactly at the end of the persisted transcript can
+    // use the rendered-prompt fast path. If the cache is a prefix (for example,
+    // the process died before the latest turn was written), the token-prefix
+    // path still reuses everything that overlaps.
+    if (!_storeChats || messageCount == 0 || messageCount != _messages.size()) {
+        return;
+    }
+
+    const llama_chat_message& lastMessage = _messages.back();
+    if (strcmp(lastMessage.role, "assistant") != 0) {
+        return;
+    }
+
+    _lastResponseEmpty = lastMessage.content == nullptr || lastMessage.content[0] == '\0';
+
+    // The last turn started with the same conversation without its assistant
+    // reply, rendered with a generation prompt. Reconstructing those tokens is
+    // enough for startCompletion() to verify the next prompt's prefix and avoid
+    // re-prefilling the previous reply after a reload.
+    std::vector<common_chat_msg> previousMessages;
+    previousMessages.reserve(messageCount - 1);
+    for (size_t i = 0; i + 1 < messageCount; ++i) {
+        common_chat_msg msg;
+        msg.role    = _messages[i].role;
+        msg.content = _messages[i].content;
+        previousMessages.push_back(std::move(msg));
+    }
+
+    try {
+        RenderedPrompt           previous = _renderPrompt(previousMessages, true);
+        std::vector<llama_token> tokens
+            = common_tokenize(llama_model_get_vocab(_model), previous.text, /*add_special=*/true,
+                              /*parse_special=*/true);
+        if (!tokens.empty() && tokens.size() <= _kvTokens.size()) {
+            _lastPromptTokens = std::move(tokens);
+        }
+    } catch (const std::exception& e) {
+        LOGe("unable to rebuild the last prompt after restoring the cache: %s", e.what());
+    }
 }
 
 void

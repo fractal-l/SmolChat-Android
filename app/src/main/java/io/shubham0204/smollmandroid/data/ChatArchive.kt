@@ -40,6 +40,7 @@ data class ArchivedChat(
     val repeatPenalty: Float = 1.1f,
     val repeatLastN: Int = 64,
     val seed: Int = -1,
+    val enableThinking: Boolean = false,
     val nThreads: Int = 4,
     val useMmap: Boolean = true,
     val useMlock: Boolean = false,

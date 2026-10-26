@@ -19,6 +19,7 @@ class ChatArchiveJsonTest {
                             dateCreated = 10L,
                             dateUsed = 20L,
                             temperature = 0.4f,
+                            enableThinking = true,
                             folderId = 1L,
                             messages =
                                 listOf(
@@ -57,6 +58,7 @@ class ChatArchiveJsonTest {
 
         assertEquals(1, archive.chats.size)
         assertEquals("Chat", archive.chats.single().name)
+        assertEquals(false, archive.chats.single().enableThinking)
     }
 
     @Test

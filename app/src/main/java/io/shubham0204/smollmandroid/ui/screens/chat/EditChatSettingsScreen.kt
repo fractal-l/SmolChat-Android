@@ -89,6 +89,7 @@ data class EditableChatSettings(
     val repeatLastN: Int,
     val seed: Int,
     val contextSize: Int,
+    val enableThinking: Boolean = false,
 ) {
     companion object {
         fun fromChat(chat: Chat): EditableChatSettings {
@@ -103,6 +104,7 @@ data class EditableChatSettings(
                 repeatLastN = chat.repeatLastN,
                 seed = chat.seed,
                 contextSize = chat.contextSize,
+                enableThinking = chat.enableThinking,
             )
         }
     }
@@ -118,6 +120,7 @@ data class EditableChatSettings(
         existingChat.repeatLastN = repeatLastN
         existingChat.seed = seed
         existingChat.contextSize = contextSize
+        existingChat.enableThinking = enableThinking
         return existingChat
     }
 }
@@ -159,6 +162,7 @@ fun EditChatSettingsScreen(
     var repeatLastN by rememberSaveable { mutableIntStateOf(settings.repeatLastN) }
     var randomSeed by rememberSaveable { mutableStateOf(settings.seed < 0) }
     var seedText by rememberSaveable { mutableStateOf(settings.seed.coerceAtLeast(0).toString()) }
+    var enableThinking by rememberSaveable { mutableStateOf(settings.enableThinking) }
     var contextSizeText by rememberSaveable { mutableStateOf(settings.contextSize.toString()) }
     var takeContextSizeFromModel by rememberSaveable { mutableStateOf(false) }
     val contextSize =
@@ -204,6 +208,7 @@ fun EditChatSettingsScreen(
                                                 seedText.toIntOrNull() ?: -1
                                             },
                                         contextSize = contextSize,
+                                        enableThinking = enableThinking,
                                     )
                                 if (settings != updatedChat) {
                                     onUpdateChat(updatedChat)
@@ -277,6 +282,28 @@ fun EditChatSettingsScreen(
                         }
                     },
                 )
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = enableThinking,
+                        onCheckedChange = { enableThinking = it },
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.chat_settings_label_thinking),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text(
+                            stringResource(R.string.chat_settings_desc_thinking),
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(24.dp))
 

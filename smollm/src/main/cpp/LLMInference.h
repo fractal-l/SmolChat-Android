@@ -47,9 +47,9 @@ class LLMInference {
     std::map<size_t, size_t> _messageBoundaries;
     // True only after a turn completed cleanly. A cancelled or failed turn
     // leaves it false so the next turn rebuilds the context from scratch.
-    bool                     _cacheValid = false;
+    bool _cacheValid = false;
     // Whether the previous turn produced an empty response.
-    bool                     _lastResponseEmpty = true;
+    bool _lastResponseEmpty = true;
 
     struct RenderedPrompt {
         std::string text;
@@ -61,6 +61,8 @@ class LLMInference {
     std::string _cacheResponseTokens;
     // whether to cache previous messages in `_messages`
     bool _storeChats = false;
+    // whether the chat template should enable its reasoning/thinking mode
+    bool _enableThinking = false;
 
     // response generation metrics
     int64_t _responseGenerationTime = 0;
@@ -73,15 +75,18 @@ class LLMInference {
 
     RenderedPrompt _renderPrompt(bool addGenerationPrompt);
 
-    RenderedPrompt _renderPrompt(
-        const std::vector<common_chat_msg>& messages, bool addGenerationPrompt);
+    RenderedPrompt _renderPrompt(const std::vector<common_chat_msg>& messages, bool addGenerationPrompt);
+
+    // Rebuilds `_lastPromptTokens` from a restored transcript so the first turn
+    // after a cache restore can still take the cheap suffix path.
+    void _rebuildLastPromptState(size_t messageCount);
 
     void _resetContext();
 
   public:
     void loadModel(const char* modelPath, float minP, float temperature, bool storeChats, long contextSize,
                    const char* chatTemplate, int nThreads, bool useMmap, bool useMlock, int topK, float topP,
-                   float repeatPenalty, int repeatLastN, int seed);
+                   float repeatPenalty, int repeatLastN, int seed, bool enableThinking);
 
     std::string benchModel(int pp, int tg, int pl, int nr);
 
@@ -99,7 +104,7 @@ class LLMInference {
     bool saveCache(const char* path);
 
     // Restores a cache saved by saveCache(). The conversation messages must
-    // already have been added, and their count must match the saved state.
+    // already have been added; the cache may cover only a prefix of them.
     bool restoreCache(const char* path);
 
     float getResponseGenerationTime() const;
